@@ -1,0 +1,11 @@
+.DS_Store
+.env
+.venv/
+__pycache__/
+*.py[cod]
+
+# Local research material and generated state should not be published by default.
+.research-radar/
+papers/
+reports/
+*.pdf

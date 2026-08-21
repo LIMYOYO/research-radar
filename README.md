@@ -6,6 +6,11 @@ Research Radar is intended for researchers who already have a paper in progress 
 
 The desired experience is closer to reading a personalized research newspaper than running a literature review from scratch.
 
+**Current implementation priority:** before discovery or project understanding,
+the project is building and validating the access channel from an individual
+INFORMS DOI to a legal, local, Codex-readable PDF. See
+[`docs/access-first.md`](docs/access-first.md).
+
 ## 中文概述
 
 每个研究项目提供三类输入：正在写的 `paper.tex`、参考文献 `.bib`，以及研究者对自己项目的 distill（研究问题、框架、机制、方法和相对现有文献的调整）。Research Radar 据此建立项目画像，持续追踪：
@@ -16,6 +21,10 @@ The desired experience is closer to reading a personalized research newspaper th
 - 可能挑战、补充或抢先当前项目贡献的论文。
 
 系统获取元数据和合法可访问的全文，按照项目自己的分析框架 distill 新论文，并定期生成增量报告。它的任务不是替代研究者的 taste，而是让 taste 作用在更少、更重要的候选论文上。
+
+当前优先级已经调整为 access-first：先打通“一篇 INFORMS 论文的 DOI →
+U of T/LibKey/OpenAthens/EBSCO 合法访问 → PDF 保存到本地 → Codex 验证可读”这条链路，
+再开始项目理解、自动搜索和日报功能。
 
 ## The problem
 
@@ -33,10 +42,10 @@ Research Radar treats these as one stateful workflow.
 
 Given a research project folder, the system should:
 
-1. **Understand the project** from TeX, BibTeX, and a human-written research profile.
-2. **Build a seed graph** from cited papers, papers that cite them, related authors, venues, and concepts.
-3. **Discover incrementally** so each run focuses on what is new since the last successful run.
-4. **Resolve access legally** through open-access copies, institutional library routes, or document-request links.
+1. **Resolve access legally** from an individual DOI to a verified local PDF whenever authorization permits.
+2. **Understand the project** from TeX, BibTeX, and a human-written research profile.
+3. **Build a seed graph** from cited papers, papers that cite them, related authors, venues, and concepts.
+4. **Discover incrementally** so each run focuses on what is new since the last successful run.
 5. **Distill consistently** using the project's own conceptual and methodological schema.
 6. **Rank by decision value**, not only semantic similarity.
 7. **Write a reviewable briefing** with evidence, access status, and recommended actions.
@@ -164,19 +173,19 @@ This separation keeps stateful and testable operations out of prompts while leav
 
 ## MVP definition
 
-The first vertical slice is complete when it can:
+The first access vertical slice is complete when it can:
 
-- ingest one real TeX/BibTeX research project;
-- produce a normalized research profile for human approval;
-- resolve stable identifiers for the seed bibliography;
-- search at least two independent metadata sources;
-- find forward citations and recent related papers;
-- deduplicate results across sources;
-- route each candidate to the best known legal access option;
-- distill the top candidates using a fixed schema;
-- write an incremental Markdown briefing;
-- remember seen papers and explicit feedback between runs;
-- run manually through one command before scheduling is enabled.
+- open the U of T OpenAthens/EBSCO session route without touching credentials;
+- route one current INFORMS DOI through LibKey or the authorized provider;
+- import the downloaded PDF into `.research-radar/papers/`;
+- validate that the file is an unencrypted, structurally valid PDF;
+- verify that Codex can extract text from it;
+- record DOI, route, timestamp, checksum, page count, and readability;
+- avoid duplicate files and ledger entries on repeated import;
+- complete the same pipeline for one open-access control paper.
+
+Project profiling, discovery, ranking, and reporting begin only after this gate
+passes with a real subscription PDF.
 
 ## Non-goals
 
@@ -200,23 +209,30 @@ The initial project will not:
 - **Local-first privacy:** unpublished manuscripts and downloaded papers stay local by default.
 - **Human approval at consequential steps:** no automatic citation insertion or external sharing.
 
-## Planned interface
+## Current access interface
 
-The exact CLI is not implemented yet; the intended interaction is:
+The first CLI slice is implemented locally:
 
 ```sh
-research-radar init /path/to/my-research-project
-research-radar profile --review
-research-radar run --since last-success
-research-radar feedback reports/2026-08-21.md
-research-radar doctor
+research-radar access session
+research-radar access open 10.1287/mnsc.2025.00819
+research-radar access import ~/Downloads/article.pdf \
+  --doi 10.1287/mnsc.2025.00819 \
+  --route uoft-ebsco \
+  --project /path/to/my-research-project
+research-radar access verify \
+  /path/to/my-research-project/.research-radar/papers/10.1287_mnsc.2025.00819.pdf
 ```
 
-A repository-scoped skill will provide equivalent natural-language entry points, and a scheduled task can later invoke the tested workflow at a chosen cadence. Scheduled execution is deliberately postponed until manual runs are reliable and idempotent.
+Installation and the complete manual test are documented in
+[`docs/access-first.md`](docs/access-first.md). A repository-scoped skill and
+scheduled workflow remain later milestones.
 
 ## Status
 
-The repository is currently in the specification and planning stage. See [PLAN.md](PLAN.md) for milestones, acceptance criteria, risks, and open decisions.
+The repository is implementing Gate A0, the local access and PDF-ingestion
+vertical slice. The CLI and unit tests exist; the real U of T browser test still
+requires a connected, user-authenticated browser. See [PLAN.md](PLAN.md).
 
 ## References
 

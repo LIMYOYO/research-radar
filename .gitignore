@@ -3,6 +3,7 @@
 .venv/
 __pycache__/
 *.py[cod]
+*.egg-info/
 
 # Local research material and generated state should not be published by default.
 .research-radar/

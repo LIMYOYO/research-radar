@@ -1,8 +1,49 @@
-# Research Radar — Project Plan
+# Research Radar — Access-first Project Plan
 
-- Status: specification
+- Status: access MVP implementation
 - Last updated: 2026-08-21
-- Primary design goal: build a project-aware, incremental literature monitoring and distillation workflow that can be shared with other researchers.
+- Current priority: prove reliable, legal local access to individual INFORMS PDFs before building discovery or project understanding.
+
+## 0. Access-first sequencing decision
+
+The long-term product goal is unchanged, but the implementation order has
+changed. Search and project understanding are not useful if subscription papers
+never reach a local, Codex-readable file. The former M3 access milestone is
+therefore pulled forward as **Gate A0**, ahead of M0, M1, and M2.
+
+Gate A0 is:
+
+> Given one INFORMS DOI and an authorized University of Toronto user, route the
+> user to a permitted full-text source, acquire one article PDF locally, record
+> its provenance, and prove that Codex can read it.
+
+Gate A0 is complete only when:
+
+- one current subscription INFORMS article is acquired through U of T and is
+  readable from `.research-radar/papers/`;
+- one open-access INFORMS article completes the same local pipeline;
+- DOI, route, timestamp, checksum, page count, and readability are recorded;
+- repeated import creates neither a duplicate PDF nor a duplicate ledger row;
+- invalid, encrypted, or HTML-disguised-as-PDF files are rejected;
+- no credential, cookie, unpublished manuscript, or PDF enters Git history.
+
+The first test matrix is:
+
+| Case | DOI |
+| --- | --- |
+| Current subscription INFORMS article | `10.1287/mnsc.2025.00819` |
+| Open-access INFORMS article | `10.1287/mnsc.2023.00320` |
+
+The execution order is now:
+
+1. **A0:** local PDF intake, validation, provenance, and real U of T browser test;
+2. **A1:** access robustness, open-access resolution, and institution adapters;
+3. **M0–M2:** research-profile specification, project ingestion, and discovery;
+4. **M4–M5:** project-conditioned distillation, ranking, and briefings;
+5. **M6–M7:** Codex scheduling, open-source packaging, and portability.
+
+The detailed one-paper workflow and commands are in
+[`docs/access-first.md`](docs/access-first.md).
 
 ## 1. Product interpretation
 
@@ -150,7 +191,7 @@ Acceptance criteria:
 - rerunning a window does not create new duplicate candidates;
 - every candidate preserves all discovery lanes that found it.
 
-### M3 — Legal access resolution
+### M3 — Legal access resolution (pulled forward as Gate A0)
 
 Goal: turn discovered metadata into the strongest authorized evidence available.
 
@@ -329,17 +370,16 @@ These questions should be answered during M0 rather than guessed in code:
 
 ## 9. Immediate next actions
 
-Priority order after this planning commit:
+Access-first priority order:
 
-1. Choose one anonymized or synthetic OM/management-science project.
-2. Draft the first research-profile and briefing schemas.
-3. Build a golden evaluation set before implementing search adapters.
-4. Run coverage experiments for Crossref, OpenAlex, and one citation/semantic source using the same seeds.
-5. Decide identifier and version-merging rules for working paper versus published article.
-6. Implement the ingestion/identity vertical slice.
-7. Reuse the access-router work only after metadata discovery is reproducible.
-8. Create the Codex skill after the manual CLI workflow is stable.
-9. Enable scheduling only after idempotency and failure reporting pass.
+1. Finish and test the Gate A0 local access CLI.
+2. Connect an authenticated browser to Codex.
+3. Run the subscription test DOI through U of T/LibKey.
+4. Download, import, and read the real PDF.
+5. Repeat with the open-access control DOI.
+6. Record the actual route and any EBSCO/LibKey friction.
+7. Only after Gate A0 passes, choose the first research-project fixture and
+   begin profile, ingestion, and discovery work.
 
 ## 10. Documentation basis
 

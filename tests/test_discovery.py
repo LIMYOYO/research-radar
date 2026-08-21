@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from research_radar.discovery import (
+    CrossrefAdapter,
     DiscoveryError,
     candidate_from_crossref,
     candidate_from_openalex,
     discover,
     merge_candidates,
+    profile_queries,
 )
 from research_radar.project import ingest_project
 
@@ -28,6 +31,12 @@ def crossref_item() -> dict[str, Any]:
         "URL": "https://doi.org/10.5555/future",
         "is-referenced-by-count": 3,
     }
+
+
+def crossref_item_with_partial_date() -> dict[str, Any]:
+    item = crossref_item()
+    item["published-online"] = {"date-parts": [[2026, None, None]]}
+    return item
 
 
 def openalex_item() -> dict[str, Any]:
@@ -85,6 +94,14 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(openalex.evidence_level, "abstract")  # type: ignore[union-attr]
         self.assertEqual(openalex.access_status, "full-text")  # type: ignore[union-attr]
 
+    def test_crossref_partial_date_is_tolerated(self) -> None:
+        candidate = candidate_from_crossref(
+            crossref_item_with_partial_date(), "crossref:keywords"
+        )
+        self.assertIsNotNone(candidate)
+        self.assertEqual(candidate.publication_date, "2026")  # type: ignore[union-attr]
+        self.assertEqual(candidate.year, 2026)  # type: ignore[union-attr]
+
     def test_discovery_resolves_seeds_and_deduplicates_sources(self) -> None:
         snapshot = ingest_project(FIXTURE)
         client = FakeClient()
@@ -98,7 +115,7 @@ class DiscoveryTests(unittest.TestCase):
 
         self.assertEqual(len(outcome.candidates), 1)
         self.assertEqual(outcome.candidates[0].doi, "10.5555/future")
-        self.assertEqual(outcome.adapter_status["crossref"], "ok")
+        self.assertTrue(outcome.adapter_status["crossref"].startswith("ok"))
         self.assertIn("2 seed(s) resolved", outcome.adapter_status["openalex"])
         self.assertFalse(outcome.errors)
         self.assertGreater(len(client.urls), 4)
@@ -117,6 +134,49 @@ class DiscoveryTests(unittest.TestCase):
         self.assertTrue(outcome.adapter_status["openalex"].startswith("ok"))
         self.assertEqual(len(outcome.candidates), 1)
         self.assertIn("simulated Crossref outage", outcome.errors[0])
+
+    def test_crossref_high_confidence_title_resolution(self) -> None:
+        snapshot = ingest_project(FIXTURE)
+        seed = replace(
+            snapshot.seeds[0],
+            doi=None,
+            title="Strategic Reviews and Platform Learning",
+        )
+        resolved = CrossrefAdapter(FakeClient()).resolve_seed(seed)
+        self.assertIsNotNone(resolved)
+        self.assertEqual(resolved.doi, "10.5555/future")  # type: ignore[union-attr]
+
+    def test_bibliography_seeds_are_active_before_first_citation(self) -> None:
+        snapshot = ingest_project(FIXTURE)
+        snapshot = replace(
+            snapshot,
+            seeds=tuple(replace(seed, cited_in_manuscript=False) for seed in snapshot.seeds),
+            cited_keys=(),
+        )
+        outcome = discover(
+            snapshot,
+            search_from="2026-08-01",
+            search_to="2026-08-21",
+            client=FakeClient(),
+            limit_per_lane=2,
+        )
+        self.assertIn("2 seed(s) resolved", outcome.adapter_status["openalex"])
+
+    def test_wrapped_core_question_becomes_one_plain_query(self) -> None:
+        snapshot = ingest_project(FIXTURE)
+        profile = replace(
+            snapshot.profile,
+            raw_markdown=(
+                "# Test\n\n**Core question**: How should a platform split *B* between\n"
+                "pricing and recommendations?\n\n## Quick start\n"
+            ),
+            sections={"overview": "test"},
+        )
+        queries = profile_queries(replace(snapshot, profile=profile), {"watch": {"keywords": []}})
+        self.assertEqual(
+            queries,
+            ("How should a platform split B between pricing and recommendations?",),
+        )
 
 
 if __name__ == "__main__":

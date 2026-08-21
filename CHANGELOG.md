@@ -8,3 +8,4 @@
 - Added explainable ranking, idempotent Markdown briefings, and researcher feedback.
 - Added the repository-scoped Research Radar Codex skill and daily task guide.
 - Added a 20-candidate offline golden set and ranking evaluation command.
+- Followed TeX/BibTeX dependency graphs, resolved missing seed DOIs by high-confidence Crossref title matching, and supported bibliography-only early drafts.

@@ -50,6 +50,40 @@ class ProjectTests(unittest.TestCase):
                 {"doi:10.1000/test": ("one", "two")},
             )
 
+    def test_ingestion_follows_tex_and_bibliography_dependencies(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "README.md").write_text("# Dependency test", encoding="utf-8")
+            (root / "paper.tex").write_text(
+                "\\input{sections/model}\n\\cite{real}\\bibliography{references}",
+                encoding="utf-8",
+            )
+            (root / "sections").mkdir()
+            (root / "sections" / "model.tex").write_text(
+                "Included model text \\cite{included}", encoding="utf-8"
+            )
+            (root / "unused.tex").write_text(
+                "Unused draft text \\cite{noise}", encoding="utf-8"
+            )
+            (root / "references.bib").write_text(
+                "@article{real,title={Real}}\n@article{included,title={Included}}",
+                encoding="utf-8",
+            )
+            (root / "sample.bib").write_text(
+                "@article{noise,title={Template noise}}", encoding="utf-8"
+            )
+
+            snapshot = ingest_project(root)
+
+            self.assertEqual(set(snapshot.cited_keys), {"real", "included"})
+            self.assertEqual({seed.citation_key for seed in snapshot.seeds}, {"real", "included"})
+            self.assertIn("Included model text", snapshot.manuscript_text)
+            self.assertNotIn("Unused draft text", snapshot.manuscript_text)
+            self.assertEqual(
+                {source.path for source in snapshot.source_files if source.kind == "tex"},
+                {"paper.tex", "sections/model.tex"},
+            )
+
     def test_snapshot_persistence_is_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

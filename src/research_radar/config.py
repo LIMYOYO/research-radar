@@ -15,6 +15,8 @@ DEFAULTS: dict[str, Any] = {
     "cadence": "daily",
     "top_n": 5,
     "lookback_days": 14,
+    "max_seed_resolution": 12,
+    "max_graph_seeds": 8,
     "sources": ["crossref", "openalex"],
     "discovery_lanes": ["forward-citations", "related", "keywords"],
     "watch": {"keywords": [], "authors": [], "venues": []},

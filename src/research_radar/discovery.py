@@ -7,6 +7,7 @@ import html
 import json
 import re
 import time
+from difflib import SequenceMatcher
 from dataclasses import asdict, dataclass, replace
 from datetime import date, timedelta
 from pathlib import Path
@@ -156,10 +157,17 @@ def _crossref_date(item: dict[str, Any]) -> str | None:
             continue
         parts = _first(block.get("date-parts"))
         if isinstance(parts, list) and parts:
-            return "-".join(
-                [f"{int(parts[0]):04d}"]
-                + [f"{int(part):02d}" for part in parts[1:3]]
-            )
+            numeric: list[int] = []
+            for part in parts[:3]:
+                try:
+                    numeric.append(int(part))
+                except (TypeError, ValueError):
+                    break
+            if numeric:
+                return "-".join(
+                    [f"{numeric[0]:04d}"]
+                    + [f"{part:02d}" for part in numeric[1:]]
+                )
     return None
 
 
@@ -270,6 +278,40 @@ class CrossrefAdapter:
         items = payload.get("message", {}).get("items", [])
         return [candidate for item in items if (candidate := candidate_from_crossref(item, "crossref:keywords"))]
 
+    def resolve_seed(self, seed: SeedPaper) -> Candidate | None:
+        if not seed.title:
+            return None
+        query = " ".join([seed.title, *seed.authors[:1]])
+        params = urlencode(
+            {
+                "query.bibliographic": query,
+                "rows": 3,
+                "select": "DOI,title,author,published-print,published-online,published,issued,created,container-title,abstract,URL,is-referenced-by-count",
+            }
+        )
+        payload = self.client.get_json(f"{CROSSREF_API}/works?{params}")
+        candidates = [
+            candidate
+            for item in payload.get("message", {}).get("items", [])
+            if (candidate := candidate_from_crossref(item, "crossref:seed-resolution"))
+            and candidate.doi
+        ]
+        target = normalize_title(seed.title)
+
+        def similarity(candidate: Candidate) -> float:
+            resolved = normalize_title(candidate.title)
+            target_tokens = set(target.split())
+            resolved_tokens = set(resolved.split())
+            union = target_tokens | resolved_tokens
+            jaccard = len(target_tokens & resolved_tokens) / len(union) if union else 0.0
+            sequence = SequenceMatcher(None, target, resolved).ratio()
+            return max(jaccard, sequence)
+
+        if not candidates:
+            return None
+        best = max(candidates, key=similarity)
+        return best if similarity(best) >= 0.82 else None
+
 
 class OpenAlexAdapter:
     name = "openalex"
@@ -304,7 +346,7 @@ class OpenAlexAdapter:
     def related(self, work: dict[str, Any], *, limit: int = 10) -> list[Candidate]:
         candidates: list[Candidate] = []
         for related_id in work.get("related_works", [])[:limit]:
-            identifier = quote(str(related_id), safe=":/")
+            identifier = quote(str(related_id).rsplit("/", 1)[-1], safe="")
             item = self.client.get_json(f"{OPENALEX_API}/works/{identifier}")
             candidate = candidate_from_openalex(item, "openalex:related")
             if candidate:
@@ -369,16 +411,39 @@ def merge_candidates(candidates: Iterable[Candidate]) -> tuple[Candidate, ...]:
 
 
 def profile_queries(snapshot: ProjectSnapshot, config: dict[str, Any]) -> tuple[str, ...]:
+    def plain_query(value: str) -> str:
+        value = re.sub(r"[*_`{}]", " ", value)
+        value = re.sub(r"\\[A-Za-z]+", " ", value)
+        return re.sub(r"\s+", " ", value).strip(" .:;-–—")
+
     queries: list[str] = []
     watched = config.get("watch", {}).get("keywords", [])
     if isinstance(watched, list):
-        queries.extend(str(item).strip() for item in watched if str(item).strip())
+        queries.extend(plain_query(str(item)) for item in watched if plain_query(str(item)))
     watch_section = snapshot.profile.sections.get("watch", "")
     keyword_match = re.search(r"(?im)^\s*[-*]?\s*keywords?\s*:\s*(.+)$", watch_section)
     if keyword_match:
-        queries.extend(part.strip() for part in keyword_match.group(1).split(",") if part.strip())
+        queries.extend(plain_query(part) for part in keyword_match.group(1).split(",") if plain_query(part))
     if not queries:
-        queries.append(snapshot.profile.project_name)
+        research_question = snapshot.profile.sections.get("research-question")
+        if research_question:
+            queries.append(research_question.splitlines()[0].strip())
+        else:
+            core_question = re.search(
+                r"(?im)^\s*(?:\*\*)?core question(?:\*\*)?\s*:\s*(.+)$",
+                snapshot.profile.raw_markdown,
+            )
+            if core_question:
+                parts = [core_question.group(1).strip()]
+                remaining = snapshot.profile.raw_markdown[core_question.end() :]
+                remaining = re.sub(r"^\r?\n", "", remaining, count=1)
+                for line in remaining.splitlines():
+                    if not line.strip() or line.lstrip().startswith(("#", "---")):
+                        break
+                    parts.append(line.strip())
+                queries.append(plain_query(" ".join(parts)))
+            else:
+                queries.append(plain_query(snapshot.profile.project_name))
     return tuple(dict.fromkeys(queries))
 
 
@@ -405,23 +470,58 @@ def discover(
     statuses: dict[str, str] = {}
     errors: list[str] = []
 
-    if "crossref" in sources and "keywords" in lanes:
+    cited_seeds = [seed for seed in snapshot.seeds if seed.cited_in_manuscript]
+    active_seeds = cited_seeds or list(snapshot.seeds)
+    effective_seeds = list(active_seeds)
+
+    if "crossref" in sources:
         adapter = CrossrefAdapter(client)
+        resolved_count = 0
+        resolution_attempts = 0
         try:
-            for query in queries:
-                found.extend(adapter.search(query, from_date=search_from, until_date=search_to, limit=limit_per_lane))
-            statuses[adapter.name] = "ok"
+            if "keywords" in lanes:
+                for query in queries:
+                    found.extend(adapter.search(query, from_date=search_from, until_date=search_to, limit=limit_per_lane))
+            resolution_limit = max(0, int(config.get("max_seed_resolution", 12)))
+            for index, seed in list(enumerate(effective_seeds)):
+                if seed.doi or not seed.title or resolution_attempts >= resolution_limit:
+                    continue
+                resolution_attempts += 1
+                resolved = adapter.resolve_seed(seed)
+                if resolved and resolved.doi:
+                    effective_seeds[index] = replace(seed, doi=resolved.doi)
+                    resolved_count += 1
+            statuses[adapter.name] = f"ok ({resolved_count} seed(s) resolved)"
         except Exception as exc:
             statuses[adapter.name] = "failed"
             errors.append(f"{adapter.name}: {exc}")
 
     if "openalex" in sources:
         adapter = OpenAlexAdapter(client)
-        try:
-            resolved = 0
-            for seed in snapshot.seeds:
-                if not seed.cited_in_manuscript or not seed.doi:
-                    continue
+        resolved = 0
+        openalex_failures = 0
+        direct = [
+            effective
+            for original, effective in zip(active_seeds, effective_seeds)
+            if original.doi and effective.doi
+        ]
+        enriched = [
+            effective
+            for original, effective in zip(active_seeds, effective_seeds)
+            if not original.doi and effective.doi
+        ]
+        graph_limit = max(0, int(config.get("max_graph_seeds", 8)))
+        graph_seeds = list(
+            dict.fromkeys(seed.identity for seed in [*enriched, *direct])
+        )[:graph_limit]
+        graph_seed_by_identity = {
+            seed.identity: seed for seed in [*enriched, *direct]
+        }
+        for identity in graph_seeds:
+            seed = graph_seed_by_identity[identity]
+            if not seed.doi:
+                continue
+            try:
                 work = adapter.resolve_seed(seed)
                 if not work:
                     continue
@@ -438,15 +538,26 @@ def discover(
                     )
                 if "related" in lanes:
                     found.extend(adapter.related(work, limit=min(limit_per_lane, 10)))
-            if "keywords" in lanes:
-                for query in queries:
+            except Exception as exc:
+                openalex_failures += 1
+                errors.append(f"{adapter.name} seed {seed.citation_key}: {exc}")
+        if "keywords" in lanes:
+            for query in queries:
+                try:
                     found.extend(adapter.search(query, from_date=search_from, until_date=search_to, limit=limit_per_lane))
+                except Exception as exc:
+                    openalex_failures += 1
+                    errors.append(f"{adapter.name} query {query!r}: {exc}")
+        if openalex_failures:
+            statuses[adapter.name] = (
+                f"partial ({resolved} seed(s) resolved; {openalex_failures} failure(s))"
+            )
+        else:
             statuses[adapter.name] = f"ok ({resolved} seed(s) resolved)"
-        except Exception as exc:
-            statuses[adapter.name] = "failed"
-            errors.append(f"{adapter.name}: {exc}")
 
-    seed_identities = {seed.identity for seed in snapshot.seeds}
+    seed_identities = {seed.identity for seed in snapshot.seeds} | {
+        seed.identity for seed in effective_seeds
+    }
     candidates = tuple(
         candidate
         for candidate in merge_candidates(found)

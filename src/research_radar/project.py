@@ -20,6 +20,11 @@ CITATION_PATTERN = re.compile(
     r"\\(?:cite|citep|citet|parencite|textcite|autocite)\*?"
     r"(?:\[[^\]]*\]){0,2}\{([^}]+)\}"
 )
+INPUT_PATTERN = re.compile(r"\\(?:input|include)\{([^}]+)\}")
+BIBLIOGRAPHY_PATTERN = re.compile(r"\\bibliography\{([^}]+)\}")
+ADDBIBRESOURCE_PATTERN = re.compile(
+    r"\\addbibresource(?:\[[^\]]*\])?\{([^}]+)\}"
+)
 COMMAND_WITH_TEXT_PATTERN = re.compile(
     r"\\(?:title|section|subsection|subsubsection|paragraph|emph|textbf|textit)"
     r"\*?\{([^{}]*)\}"
@@ -192,21 +197,85 @@ def tex_to_text(text: str) -> str:
     return cleaned.strip()
 
 
-def read_manuscript(root: Path) -> tuple[str, tuple[str, ...], list[SourceFile]]:
-    tex_files = discover_files(root, ".tex")
+def _resolve_local_source(
+    root: Path,
+    parent: Path,
+    value: str,
+    suffix: str,
+) -> Path | None:
+    candidate = (parent / value.strip()).resolve()
+    if not candidate.suffix:
+        candidate = candidate.with_suffix(suffix)
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        return None
+    return candidate if candidate.is_file() and not _is_ignored(candidate, root) else None
+
+
+def _main_tex_files(root: Path) -> list[Path]:
+    preferred = root / "paper.tex"
+    if preferred.is_file():
+        return [preferred]
+    discovered = discover_files(root, ".tex")
+    named_paper = [path for path in discovered if path.name.lower() == "paper.tex"]
+    if len(named_paper) == 1:
+        return named_paper
+    return discovered
+
+
+def _manuscript_graph(root: Path) -> list[Path]:
+    queue = list(_main_tex_files(root))
+    visited: set[Path] = set()
+    ordered: list[Path] = []
+    while queue:
+        path = queue.pop(0).resolve()
+        if path in visited:
+            continue
+        visited.add(path)
+        ordered.append(path)
+        raw = strip_tex_comments(path.read_text(encoding="utf-8"))
+        for match in INPUT_PATTERN.finditer(raw):
+            child = _resolve_local_source(root, path.parent, match.group(1), ".tex")
+            if child and child not in visited:
+                queue.append(child)
+    return ordered
+
+
+def read_manuscript(
+    root: Path,
+) -> tuple[str, tuple[str, ...], list[SourceFile], tuple[Path, ...]]:
+    tex_files = _manuscript_graph(root)
     parts: list[str] = []
     cited: set[str] = set()
     sources: list[SourceFile] = []
+    bibliography_files: set[Path] = set()
     for path in tex_files:
         raw = path.read_text(encoding="utf-8")
         uncommented = strip_tex_comments(raw)
         for match in CITATION_PATTERN.finditer(uncommented):
             cited.update(key.strip() for key in match.group(1).split(",") if key.strip())
+        for match in BIBLIOGRAPHY_PATTERN.finditer(uncommented):
+            for value in match.group(1).split(","):
+                bibliography = _resolve_local_source(root, path.parent, value, ".bib")
+                if bibliography:
+                    bibliography_files.add(bibliography)
+        for match in ADDBIBRESOURCE_PATTERN.finditer(uncommented):
+            bibliography = _resolve_local_source(
+                root, path.parent, match.group(1), ".bib"
+            )
+            if bibliography:
+                bibliography_files.add(bibliography)
         rendered = tex_to_text(raw)
         if rendered:
             parts.append(rendered)
         sources.append(_source_file(path, root, "tex"))
-    return "\n\n".join(parts), tuple(sorted(cited)), sources
+    return (
+        "\n\n".join(parts),
+        tuple(sorted(cited)),
+        sources,
+        tuple(sorted(bibliography_files)),
+    )
 
 
 def normalize_title(value: str) -> str:
@@ -247,12 +316,16 @@ def _entry_doi(entry: dict[str, object]) -> str | None:
 
 
 def parse_bibliography(
-    root: Path, cited_keys: Iterable[str]
+    root: Path,
+    cited_keys: Iterable[str],
+    bibliography_files: Iterable[Path] = (),
 ) -> tuple[tuple[SeedPaper, ...], list[SourceFile]]:
     cited = {key.lower() for key in cited_keys}
     seeds: list[SeedPaper] = []
     sources: list[SourceFile] = []
-    for path in discover_files(root, ".bib"):
+    selected = tuple(bibliography_files)
+    paths = list(selected) if selected else discover_files(root, ".bib")
+    for path in paths:
         try:
             database = bibtexparser.loads(path.read_text(encoding="utf-8"))
         except Exception as exc:
@@ -300,8 +373,8 @@ def ingest_project(project: str | Path) -> ProjectSnapshot:
         raise ProjectError(f"Project directory does not exist: {root}")
 
     profile, profile_source = read_profile(root)
-    manuscript_text, cited_keys, manuscript_sources = read_manuscript(root)
-    seeds, bib_sources = parse_bibliography(root, cited_keys)
+    manuscript_text, cited_keys, manuscript_sources, bibliography_files = read_manuscript(root)
+    seeds, bib_sources = parse_bibliography(root, cited_keys, bibliography_files)
     source_files = tuple([profile_source, *manuscript_sources, *bib_sources])
     fingerprint_payload = {
         "profile": profile.raw_markdown,

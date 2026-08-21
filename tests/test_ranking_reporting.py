@@ -9,6 +9,7 @@ from research_radar.project import ingest_project
 from research_radar.ranking import rank_candidates
 from research_radar.reporting import write_briefing
 from research_radar.state import (
+    last_successful_search_to,
     latest_feedback,
     save_discovery,
     save_feedback,
@@ -98,6 +99,7 @@ class RankingAndReportingTests(unittest.TestCase):
                 manifest=manifest,
                 status="success",
             )
+            self.assertEqual(last_successful_search_to(root), "2026-08-21")
             save_feedback(root, identity=paper.identity, label="known", note="Already cited")
             ranked = rank_candidates(snapshot, [paper], feedback=latest_feedback(root))
             self.assertTrue(ranked[0].suppressed)

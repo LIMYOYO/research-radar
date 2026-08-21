@@ -28,6 +28,7 @@ from .ranking import rank_candidates
 from .reporting import write_briefing
 from .state import (
     FEEDBACK_LABELS,
+    last_successful_search_to,
     latest_feedback,
     load_candidates,
     save_discovery,
@@ -304,9 +305,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "discover":
             snapshot = ingest_project(args.project)
             save_snapshot(snapshot)
+            search_from = args.search_from or last_successful_search_to(args.project)
             outcome = discover(
                 snapshot,
-                search_from=args.search_from,
+                search_from=search_from,
                 search_to=args.search_to,
                 limit_per_lane=args.limit_per_lane,
             )
@@ -345,9 +347,15 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "run":
             snapshot = ingest_project(args.project)
             save_snapshot(snapshot)
+            prior_identities = {
+                str(item["identity"])
+                for item in load_candidates(args.project)
+                if item.get("identity")
+            }
+            search_from = args.search_from or last_successful_search_to(args.project)
             outcome = discover(
                 snapshot,
-                search_from=args.search_from,
+                search_from=search_from,
                 search_to=args.search_to,
                 limit_per_lane=args.limit_per_lane,
             )
@@ -367,9 +375,15 @@ def main(argv: list[str] | None = None) -> int:
                 manifest=manifest,
                 status=status,
             )
+            new_candidates = tuple(
+                candidate
+                for candidate in outcome.candidates
+                if candidate.identity not in prior_identities
+            )
+            manifest["new_candidate_count"] = len(new_candidates)
             ranked = rank_candidates(
                 snapshot,
-                outcome.candidates,
+                new_candidates,
                 feedback=latest_feedback(args.project),
             )
             config = load_config(args.project)

@@ -301,3 +301,26 @@ def latest_feedback(project: str | Path) -> dict[str, dict[str, object]]:
         }
         for row in rows
     }
+
+
+def last_successful_search_to(project: str | Path) -> str | None:
+    root = str(Path(project).expanduser().resolve())
+    with connect(root) as connection:
+        rows = connection.execute(
+            """
+            SELECT manifest_json
+            FROM runs
+            WHERE project_root = ? AND run_type = 'discovery' AND status = 'success'
+            ORDER BY id DESC
+            """,
+            (root,),
+        ).fetchall()
+    for row in rows:
+        try:
+            manifest = json.loads(row["manifest_json"])
+        except (json.JSONDecodeError, TypeError):
+            continue
+        value = manifest.get("search_to")
+        if isinstance(value, str) and value:
+            return value
+    return None

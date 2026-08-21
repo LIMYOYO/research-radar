@@ -42,7 +42,7 @@ def render_briefing(
         f"- Generated: {generated_at}",
         f"- Search window: {manifest['search_from']} to {manifest['search_to']}",
         f"- Project fingerprint: `{project_fingerprint}`",
-        f"- Candidates found: {manifest['candidate_count']}; shown: {len(visible)}; suppressed: {len(suppressed)}",
+        f"- Candidates found: {manifest['candidate_count']}; new: {manifest.get('new_candidate_count', manifest['candidate_count'])}; shown: {len(visible)}; suppressed: {len(suppressed)}",
         "",
         "## Executive signal",
         "",

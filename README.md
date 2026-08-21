@@ -281,6 +281,17 @@ Run the complete test suite with:
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
+Run the checked-in 20-candidate offline ranking evaluation with:
+
+```sh
+.venv/bin/research-radar evaluate \
+  --project examples/synthetic-project \
+  --fixture tests/fixtures/golden-candidates.json
+```
+
+The synthetic baseline currently records precision@5 of 1.0 and precision@10
+of 0.889. These are regression checks, not a claim about real-project quality.
+
 ## References
 
 - [OpenAI: Build skills](https://learn.chatgpt.com/codex/skills)

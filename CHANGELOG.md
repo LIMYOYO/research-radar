@@ -7,3 +7,4 @@
 - Added Crossref and OpenAlex discovery, deduplication, caching, and failure isolation.
 - Added explainable ranking, idempotent Markdown briefings, and researcher feedback.
 - Added the repository-scoped Research Radar Codex skill and daily task guide.
+- Added a 20-candidate offline golden set and ranking evaluation command.

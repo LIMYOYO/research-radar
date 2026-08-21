@@ -391,6 +391,7 @@ Implemented and tested:
 - idempotent Markdown briefings and feedback-based suppression;
 - repository-scoped `$research-radar` skill;
 - a live synthetic-project run against both metadata providers.
+- a 20-candidate synthetic golden set with an executable precision/recall evaluation.
 
 The remaining definition-of-done checks require elapsed use, not more scaffolding:
 two real researchers, four weeks of runs, and a reviewed 20-paper-per-project

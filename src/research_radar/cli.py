@@ -22,6 +22,7 @@ from .access import (
 )
 from .config import load_config
 from .discovery import Candidate, discover
+from .evaluation import evaluate_fixture
 from .project import ProjectError, ingest_project
 from .ranking import rank_candidates
 from .reporting import write_briefing
@@ -116,6 +117,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     brief.add_argument("--project", type=Path, default=Path.cwd())
     brief.add_argument("--top-n", type=int)
+
+    evaluate = subparsers.add_parser(
+        "evaluate", help="Evaluate ranking against a reviewed offline fixture."
+    )
+    evaluate.add_argument("--project", type=Path, required=True)
+    evaluate.add_argument("--fixture", type=Path, required=True)
 
     access = subparsers.add_parser(
         "access", help="Open a legal access route or archive a downloaded PDF."
@@ -448,6 +455,18 @@ def main(argv: list[str] | None = None) -> int:
                         "shown_count": report.shown_count,
                         "suppressed_count": report.suppressed_count,
                     },
+                    indent=2,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
+            return 0
+
+        if args.command == "evaluate":
+            result = evaluate_fixture(args.project, args.fixture)
+            print(
+                json.dumps(
+                    asdict(result),
                     indent=2,
                     ensure_ascii=False,
                     sort_keys=True,

@@ -3,8 +3,8 @@
 The first Research Radar milestone is deliberately narrow:
 
 > Given one INFORMS DOI and an authorized University of Toronto user, obtain one
-> article PDF through a permitted route, archive it locally, and prove that Codex
-> can read it.
+> article PDF through a permitted route, archive it locally, and allow Codex to
+> read it only when the source license or terms permit.
 
 Authentication and the final single-article download remain in the user's
 browser. Research Radar never receives UTORid credentials, Duo responses,
@@ -42,6 +42,7 @@ python3 -m venv .venv
    .venv/bin/research-radar access import ~/Downloads/article.pdf \
      --doi 10.1287/mnsc.2025.00819 \
      --route uoft-ebsco \
+     --ai-use-status unknown \
      --project /path/to/my-research-project
    ```
 
@@ -60,7 +61,7 @@ The acquisition ledger is written to:
 Both are private local state and are ignored by Git when the recommended
 project `.gitignore` is used.
 
-## Verify Codex readability
+## Verify technical readability
 
 ```sh
 .venv/bin/research-radar access verify \
@@ -71,11 +72,30 @@ Success requires a structurally valid, unencrypted PDF with extractable text.
 An image-only PDF can be archived with `--allow-image-only`, but it is explicitly
 marked as not text-readable and requires OCR or visual reading later.
 
+Technical readability and permission for AI-assisted use are different fields.
+`codex_readable` means text extraction works; `codex_eligible` additionally
+requires `--ai-use-status allowed`. If the source terms are unknown or prohibit
+AI use, the PDF may be archived for permitted personal use but Research Radar
+must not send its contents to Codex. For `prohibited`, the importer skips text
+extraction entirely and records `text_extraction_performed: false`.
+
+For a clearly licensed open-access paper, record the license explicitly:
+
+```sh
+.venv/bin/research-radar access import ~/Downloads/open-paper.pdf \
+  --doi 10.1287/mnsc.2023.00320 \
+  --route uoft-ebsco \
+  --ai-use-status allowed \
+  --license-name "CC BY 4.0" \
+  --license-url https://creativecommons.org/licenses/by/4.0/ \
+  --project /path/to/my-research-project
+```
+
 ## Acceptance test matrix
 
 | Case | DOI | Expected result |
 | --- | --- | --- |
-| Current subscription INFORMS article | `10.1287/mnsc.2025.00819` | U of T/LibKey route yields an importable PDF |
+| Current subscription INFORMS article | `10.1287/mnsc.2025.00819` | U of T/LibKey route yields an importable personal-use PDF; Codex eligibility follows the displayed terms |
 | Open-access INFORMS article | `10.1287/mnsc.2023.00320` | OA route yields an importable PDF without institutional authentication |
 | Repeated import | Either DOI | No duplicate PDF or ledger entry |
 | Missing full text | Any DOI | Route failure is reported; no fake PDF record is written |
@@ -86,4 +106,5 @@ marked as not text-readable and requires OCR or visual reading later.
 - Access is user-initiated and article-by-article.
 - No MFA bypass, credential storage, cookie extraction, or bulk download.
 - The ledger records the route and file checksum, not authentication data.
+- AI eligibility is recorded separately from technical PDF readability.
 - Licensed PDFs remain local and are never committed or redistributed by default.

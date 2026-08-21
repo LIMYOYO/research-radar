@@ -8,21 +8,23 @@
 
 The long-term product goal is unchanged, but the implementation order has
 changed. Search and project understanding are not useful if subscription papers
-never reach a local, Codex-readable file. The former M3 access milestone is
+never reach a local file and the system cannot distinguish personal-use access
+from permission for Codex reading. The former M3 access milestone is
 therefore pulled forward as **Gate A0**, ahead of M0, M1, and M2.
 
 Gate A0 is:
 
 > Given one INFORMS DOI and an authorized University of Toronto user, route the
 > user to a permitted full-text source, acquire one article PDF locally, record
-> its provenance, and prove that Codex can read it.
+> its provenance, and allow Codex reading only when the applicable terms permit.
 
 Gate A0 is complete only when:
 
 - one current subscription INFORMS article is acquired through U of T and is
-  readable from `.research-radar/papers/`;
+  archived in `.research-radar/papers/` with its AI-use status;
 - one open-access INFORMS article completes the same local pipeline;
-- DOI, route, timestamp, checksum, page count, and readability are recorded;
+- DOI, route, timestamp, checksum, page count, technical readability, and
+  AI-use eligibility are recorded separately;
 - repeated import creates neither a duplicate PDF nor a duplicate ledger row;
 - invalid, encrypted, or HTML-disguised-as-PDF files are rejected;
 - no credential, cookie, unpublished manuscript, or PDF enters Git history.
@@ -203,6 +205,7 @@ Deliverables:
 - U of T OpenAthens/EBSCO handoff for individual user-initiated requests;
 - optional integration or code reuse from `paper-access-router`;
 - PDF acquisition ledger with source, timestamp, license/access route, and checksum;
+- separate technical-readability and AI-use-permission states;
 - safe download limits and explicit manual-authentication boundary.
 
 Acceptance criteria:
@@ -378,7 +381,9 @@ Access-first priority order:
 4. Download, import, and read the real PDF.
 5. Repeat with the open-access control DOI.
 6. Record the actual route and any EBSCO/LibKey friction.
-7. Only after Gate A0 passes, choose the first research-project fixture and
+7. Add license-aware alternate-copy resolution for subscription records whose
+   provider terms prohibit AI use.
+8. Only after Gate A0 passes, choose the first research-project fixture and
    begin profile, ingestion, and discovery work.
 
 ## 10. Documentation basis

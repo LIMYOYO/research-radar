@@ -58,6 +58,16 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
     )
     import_command.add_argument("--allow-image-only", action="store_true")
+    import_command.add_argument(
+        "--ai-use-status",
+        choices=("allowed", "prohibited", "unknown"),
+        default="unknown",
+        help="Whether the source terms permit AI-assisted reading.",
+    )
+    import_command.add_argument(
+        "--license-name", help="License or terms label, such as CC BY 4.0."
+    )
+    import_command.add_argument("--license-url")
 
     verify = access_subparsers.add_parser(
         "verify", help="Check that a local PDF can be parsed and read by Codex."
@@ -109,6 +119,9 @@ def main(argv: list[str] | None = None) -> int:
                 project=args.project,
                 route=args.route,
                 allow_image_only=args.allow_image_only,
+                ai_use_status=args.ai_use_status,
+                license_name=args.license_name,
+                license_url=args.license_url,
             )
             result = asdict(record)
             result["absolute_file"] = str(destination)
@@ -124,4 +137,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

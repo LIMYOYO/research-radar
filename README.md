@@ -8,7 +8,8 @@ The desired experience is closer to reading a personalized research newspaper th
 
 **Current implementation priority:** before discovery or project understanding,
 the project is building and validating the access channel from an individual
-INFORMS DOI to a legal, local, Codex-readable PDF. See
+INFORMS DOI to a legal local PDF, followed by Codex reading only when the
+source license or terms permit it. See
 [`docs/access-first.md`](docs/access-first.md).
 
 ## 中文概述
@@ -23,8 +24,8 @@ INFORMS DOI to a legal, local, Codex-readable PDF. See
 系统获取元数据和合法可访问的全文，按照项目自己的分析框架 distill 新论文，并定期生成增量报告。它的任务不是替代研究者的 taste，而是让 taste 作用在更少、更重要的候选论文上。
 
 当前优先级已经调整为 access-first：先打通“一篇 INFORMS 论文的 DOI →
-U of T/LibKey/OpenAthens/EBSCO 合法访问 → PDF 保存到本地 → Codex 验证可读”这条链路，
-再开始项目理解、自动搜索和日报功能。
+U of T/LibKey/OpenAthens/EBSCO 合法访问 → PDF 保存到本地 → 检查许可是否允许 Codex
+读取”这条链路，再开始项目理解、自动搜索和日报功能。
 
 ## The problem
 
@@ -179,13 +180,14 @@ The first access vertical slice is complete when it can:
 - route one current INFORMS DOI through LibKey or the authorized provider;
 - import the downloaded PDF into `.research-radar/papers/`;
 - validate that the file is an unencrypted, structurally valid PDF;
-- verify that Codex can extract text from it;
-- record DOI, route, timestamp, checksum, page count, and readability;
+- verify that Codex can extract text when the source license or terms permit;
+- record DOI, route, timestamp, checksum, page count, technical readability,
+  license, and AI-use eligibility;
 - avoid duplicate files and ledger entries on repeated import;
 - complete the same pipeline for one open-access control paper.
 
 Project profiling, discovery, ranking, and reporting begin only after this gate
-passes with a real subscription PDF.
+passes with a real subscription PDF and a license-aware alternative-copy path.
 
 ## Non-goals
 
@@ -227,6 +229,11 @@ research-radar access verify \
 Installation and the complete manual test are documented in
 [`docs/access-first.md`](docs/access-first.md). A repository-scoped skill and
 scheduled workflow remain later milestones.
+
+The first real U of T/INFORMS validation is recorded in
+[`docs/access-validation-2026-08-21.md`](docs/access-validation-2026-08-21.md).
+It confirms successful institutional PDF acquisition and also shows why access
+status and AI-use permission must be tracked separately.
 
 ## Status
 

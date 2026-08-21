@@ -27,6 +27,7 @@ VALID_ROUTES = {
     "publisher",
     "manual",
 }
+AI_USE_STATUSES = {"allowed", "prohibited", "unknown"}
 
 
 class AccessError(ValueError):
@@ -42,6 +43,7 @@ class PdfInspection:
     text_characters: int
     encrypted: bool
     codex_readable: bool
+    text_extraction_performed: bool
 
 
 @dataclass(frozen=True)
@@ -57,6 +59,11 @@ class AcquisitionRecord:
     pages: int
     text_characters: int
     codex_readable: bool
+    text_extraction_performed: bool
+    ai_use_status: str
+    codex_eligible: bool
+    license_name: str | None
+    license_url: str | None
 
 
 def normalize_doi(value: str) -> str:
@@ -102,8 +109,10 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def inspect_pdf(path: str | Path) -> PdfInspection:
-    """Validate a PDF and determine whether it exposes extractable text."""
+def inspect_pdf(
+    path: str | Path, *, extract_text: bool = True
+) -> PdfInspection:
+    """Validate a PDF and optionally test whether it exposes extractable text."""
     pdf_path = Path(path).expanduser().resolve()
     if not pdf_path.is_file():
         raise AccessError(f"PDF does not exist: {pdf_path}")
@@ -120,7 +129,11 @@ def inspect_pdf(path: str | Path) -> PdfInspection:
         pages = len(reader.pages)
         if pages < 1:
             raise AccessError("The PDF contains no pages.")
-        extracted = "".join((page.extract_text() or "") for page in reader.pages)
+        extracted = (
+            "".join((page.extract_text() or "") for page in reader.pages)
+            if extract_text
+            else ""
+        )
     except AccessError:
         raise
     except Exception as exc:
@@ -134,7 +147,8 @@ def inspect_pdf(path: str | Path) -> PdfInspection:
         pages=pages,
         text_characters=text_characters,
         encrypted=encrypted,
-        codex_readable=text_characters > 0,
+        codex_readable=extract_text and text_characters > 0,
+        text_extraction_performed=extract_text,
     )
 
 
@@ -145,16 +159,30 @@ def import_pdf(
     project: str | Path,
     route: str,
     allow_image_only: bool = False,
+    ai_use_status: str = "unknown",
+    license_name: str | None = None,
+    license_url: str | None = None,
 ) -> tuple[Path, AcquisitionRecord, bool]:
     """Validate and archive one user-authorized PDF under a research project."""
     normalized_doi = normalize_doi(doi)
     if route not in VALID_ROUTES:
         choices = ", ".join(sorted(VALID_ROUTES))
         raise AccessError(f"Unknown route {route!r}; choose one of: {choices}")
+    if ai_use_status not in AI_USE_STATUSES:
+        choices = ", ".join(sorted(AI_USE_STATUSES))
+        raise AccessError(
+            f"Unknown AI-use status {ai_use_status!r}; choose one of: {choices}"
+        )
 
     source_path = Path(source).expanduser().resolve()
-    inspection = inspect_pdf(source_path)
-    if not inspection.codex_readable and not allow_image_only:
+    inspection = inspect_pdf(
+        source_path, extract_text=ai_use_status != "prohibited"
+    )
+    if (
+        ai_use_status != "prohibited"
+        and not inspection.codex_readable
+        and not allow_image_only
+    ):
         raise AccessError(
             "The PDF has no extractable text. Use --allow-image-only to archive it "
             "for later OCR or visual reading."
@@ -191,6 +219,11 @@ def import_pdf(
         pages=inspection.pages,
         text_characters=inspection.text_characters,
         codex_readable=inspection.codex_readable,
+        text_extraction_performed=inspection.text_extraction_performed,
+        ai_use_status=ai_use_status,
+        codex_eligible=inspection.codex_readable and ai_use_status == "allowed",
+        license_name=license_name,
+        license_url=license_url,
     )
 
     if not duplicate:
@@ -200,4 +233,3 @@ def import_pdf(
             stream.write("\n")
 
     return destination, record, duplicate
-

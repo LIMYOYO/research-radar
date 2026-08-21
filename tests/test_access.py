@@ -71,12 +71,16 @@ class AccessTests(unittest.TestCase):
                 doi="10.1287/mnsc.2025.00819",
                 project=root,
                 route="uoft-ebsco",
+                ai_use_status="allowed",
+                license_name="CC BY 4.0",
             )
             second_path, _, second_duplicate = import_pdf(
                 source,
                 doi="10.1287/mnsc.2025.00819",
                 project=root,
                 route="uoft-ebsco",
+                ai_use_status="allowed",
+                license_name="CC BY 4.0",
             )
 
             self.assertEqual(first_path, second_path)
@@ -84,10 +88,54 @@ class AccessTests(unittest.TestCase):
             self.assertTrue(second_duplicate)
             self.assertEqual(first_record.doi, "10.1287/mnsc.2025.00819")
             self.assertTrue(first_record.codex_readable)
+            self.assertTrue(first_record.text_extraction_performed)
+            self.assertTrue(first_record.codex_eligible)
+            self.assertEqual(first_record.ai_use_status, "allowed")
             ledger = root / ".research-radar" / "access-ledger.jsonl"
             records = [json.loads(line) for line in ledger.read_text().splitlines()]
             self.assertEqual(len(records), 1)
             self.assertEqual(records[0]["sha256"], first_record.sha256)
+
+    def test_unknown_ai_use_is_not_codex_eligible(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "download.pdf"
+            writer = PdfWriter()
+            writer.add_blank_page(width=612, height=792)
+            with source.open("wb") as stream:
+                writer.write(stream)
+
+            _, record, _ = import_pdf(
+                source,
+                doi="10.1287/mnsc.2025.00819",
+                project=root,
+                route="uoft-ebsco",
+                allow_image_only=True,
+            )
+
+            self.assertEqual(record.ai_use_status, "unknown")
+            self.assertFalse(record.codex_eligible)
+
+    def test_prohibited_ai_use_skips_text_extraction(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "download.pdf"
+            writer = PdfWriter()
+            writer.add_blank_page(width=612, height=792)
+            with source.open("wb") as stream:
+                writer.write(stream)
+
+            _, record, _ = import_pdf(
+                source,
+                doi="10.1287/mnsc.2025.00819",
+                project=root,
+                route="uoft-ebsco",
+                ai_use_status="prohibited",
+            )
+
+            self.assertFalse(record.text_extraction_performed)
+            self.assertFalse(record.codex_readable)
+            self.assertFalse(record.codex_eligible)
 
 
 if __name__ == "__main__":

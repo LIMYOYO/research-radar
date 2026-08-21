@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-radar.local/schemas/research-profile.schema.json",
+  "title": "Research Radar project profile",
+  "type": "object",
+  "required": ["schema_version", "project_name", "source_file", "sections"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "project_name": {"type": "string", "minLength": 1},
+    "source_file": {"type": "string", "minLength": 1},
+    "sections": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {"type": "string"}
+    },
+    "fingerprint": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  },
+  "additionalProperties": false
+}

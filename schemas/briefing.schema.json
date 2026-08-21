@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-radar.local/schemas/briefing.schema.json",
+  "title": "Research Radar incremental briefing",
+  "type": "object",
+  "required": ["schema_version", "project_fingerprint", "generated_at", "search_window", "adapter_status", "candidates"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "project_fingerprint": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "search_window": {
+      "type": "object",
+      "required": ["from", "to"],
+      "properties": {"from": {"type": "string"}, "to": {"type": "string"}}
+    },
+    "adapter_status": {"type": "object", "additionalProperties": {"type": "string"}},
+    "executive_signal": {"type": "string"},
+    "candidates": {"type": "array", "items": {"$ref": "candidate.schema.json"}},
+    "filtered_count": {"type": "integer", "minimum": 0}
+  },
+  "additionalProperties": false
+}

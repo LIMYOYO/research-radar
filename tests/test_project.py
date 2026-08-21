@@ -54,7 +54,8 @@ class ProjectTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             for source in FIXTURE.iterdir():
-                (root / source.name).write_bytes(source.read_bytes())
+                if source.is_file():
+                    (root / source.name).write_bytes(source.read_bytes())
             snapshot = ingest_project(root)
             path = save_snapshot(snapshot)
             save_snapshot(snapshot)

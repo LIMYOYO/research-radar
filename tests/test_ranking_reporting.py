@@ -1,0 +1,130 @@
+from __future__ import annotations
+
+import tempfile
+import unittest
+from pathlib import Path
+
+from research_radar.discovery import Candidate
+from research_radar.project import ingest_project
+from research_radar.ranking import rank_candidates
+from research_radar.reporting import write_briefing
+from research_radar.state import (
+    latest_feedback,
+    save_discovery,
+    save_feedback,
+    save_snapshot,
+)
+
+
+FIXTURE = Path(__file__).resolve().parents[1] / "examples" / "synthetic-project"
+
+
+def copy_fixture(root: Path) -> None:
+    for source in FIXTURE.iterdir():
+        if source.is_file():
+            (root / source.name).write_bytes(source.read_bytes())
+
+
+def candidate(
+    identity: str,
+    title: str,
+    abstract: str,
+    *,
+    lane: str = "openalex:keywords",
+) -> Candidate:
+    return Candidate(
+        schema_version=1,
+        identity=identity,
+        doi=identity.removeprefix("doi:") if identity.startswith("doi:") else None,
+        openalex_id=None,
+        title=title,
+        authors=("A. Researcher",),
+        year=2026,
+        venue="Management Science",
+        abstract=abstract,
+        url="https://example.test/paper",
+        discovered_by=(lane,),
+        access_status="abstract",
+        evidence_level="abstract",
+        cited_by_count=2,
+        publication_date="2026-08-20",
+    )
+
+
+class RankingAndReportingTests(unittest.TestCase):
+    def test_structurally_relevant_candidate_ranks_above_lexical_noise(self) -> None:
+        snapshot = ingest_project(FIXTURE)
+        relevant = candidate(
+            "doi:10.5555/relevant",
+            "Strategic Review Manipulation in Platform Recommendation",
+            "A platform uses Bayesian learning to choose recommendations while strategic sellers manipulate review signals at a convex effort cost.",
+            lane="openalex:forward-citations",
+        )
+        noise = candidate(
+            "doi:10.5555/noise",
+            "Fake Review Detection with Sentiment Classification",
+            "A machine learning classifier detects fake review text using sentiment features.",
+        )
+
+        ranked = rank_candidates(snapshot, [noise, relevant])
+
+        self.assertEqual(ranked[0].candidate.identity, relevant.identity)
+        self.assertGreater(ranked[0].score, ranked[1].score)
+        self.assertEqual(ranked[0].relationship, "extends")
+        self.assertTrue(ranked[1].suppressed)
+
+    def test_feedback_suppresses_candidate_and_report_is_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            copy_fixture(root)
+            snapshot = ingest_project(root)
+            save_snapshot(snapshot)
+            paper = candidate(
+                "doi:10.5555/relevant",
+                "Strategic Review Manipulation in Platform Recommendation",
+                "A platform learns quality while sellers manipulate review signals.",
+            )
+            manifest = {
+                "search_from": "2026-08-01",
+                "search_to": "2026-08-21",
+                "queries": ["platform learning"],
+                "adapter_status": {"openalex": "ok"},
+                "errors": [],
+                "candidate_count": 1,
+            }
+            save_discovery(
+                root,
+                candidates=[paper.to_dict()],
+                manifest=manifest,
+                status="success",
+            )
+            save_feedback(root, identity=paper.identity, label="known", note="Already cited")
+            ranked = rank_candidates(snapshot, [paper], feedback=latest_feedback(root))
+            self.assertTrue(ranked[0].suppressed)
+            self.assertEqual(ranked[0].suppression_reason, "feedback:known")
+
+            first = write_briefing(
+                root,
+                project_name=snapshot.profile.project_name,
+                project_fingerprint=snapshot.fingerprint,
+                ranked=ranked,
+                manifest=manifest,
+                top_n=5,
+            )
+            second = write_briefing(
+                root,
+                project_name=snapshot.profile.project_name,
+                project_fingerprint=snapshot.fingerprint,
+                ranked=ranked,
+                manifest=manifest,
+                top_n=5,
+            )
+            self.assertFalse(first.duplicate)
+            self.assertTrue(second.duplicate)
+            content = first.path.read_text(encoding="utf-8")
+            self.assertIn("No unseen high-signal change", content)
+            self.assertIn("feedback:known", content)
+
+
+if __name__ == "__main__":
+    unittest.main()

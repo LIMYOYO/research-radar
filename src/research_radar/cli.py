@@ -8,6 +8,7 @@ import shutil
 import sys
 import webbrowser
 from dataclasses import asdict
+from datetime import date
 from pathlib import Path
 
 from .access import (
@@ -18,8 +19,20 @@ from .access import (
     inspect_pdf,
     libkey_url,
 )
+from .config import load_config
+from .discovery import Candidate, discover
 from .project import ProjectError, ingest_project
-from .state import save_snapshot, state_counts
+from .ranking import rank_candidates
+from .reporting import write_briefing
+from .state import (
+    FEEDBACK_LABELS,
+    latest_feedback,
+    load_candidates,
+    save_discovery,
+    save_feedback,
+    save_snapshot,
+    state_counts,
+)
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[2]
@@ -71,6 +84,37 @@ def build_parser() -> argparse.ArgumentParser:
         "doctor", help="Check whether a project is ready for discovery."
     )
     doctor.add_argument("--project", type=Path, default=Path.cwd())
+
+    discovery = subparsers.add_parser(
+        "discover", help="Find forward citations, related work, and keyword matches."
+    )
+    discovery.add_argument("--project", type=Path, default=Path.cwd())
+    discovery.add_argument("--from", dest="search_from")
+    discovery.add_argument("--to", dest="search_to")
+    discovery.add_argument("--limit-per-lane", type=int, default=20)
+
+    run = subparsers.add_parser(
+        "run", help="Ingest, discover, rank, and write one incremental briefing."
+    )
+    run.add_argument("--project", type=Path, default=Path.cwd())
+    run.add_argument("--from", dest="search_from")
+    run.add_argument("--to", dest="search_to")
+    run.add_argument("--limit-per-lane", type=int, default=20)
+    run.add_argument("--top-n", type=int)
+
+    feedback = subparsers.add_parser(
+        "feedback", help="Record a researcher decision for one candidate."
+    )
+    feedback.add_argument("identity")
+    feedback.add_argument("label", choices=tuple(sorted(FEEDBACK_LABELS)))
+    feedback.add_argument("--project", type=Path, default=Path.cwd())
+    feedback.add_argument("--note")
+
+    brief = subparsers.add_parser(
+        "brief", help="Re-rank stored candidates and write a briefing without network access."
+    )
+    brief.add_argument("--project", type=Path, default=Path.cwd())
+    brief.add_argument("--top-n", type=int)
 
     access = subparsers.add_parser(
         "access", help="Open a legal access route or archive a downloaded PDF."
@@ -244,6 +288,166 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(result, indent=2, ensure_ascii=False, sort_keys=True))
             return exit_code
 
+        if args.command == "discover":
+            snapshot = ingest_project(args.project)
+            save_snapshot(snapshot)
+            outcome = discover(
+                snapshot,
+                search_from=args.search_from,
+                search_to=args.search_to,
+                limit_per_lane=args.limit_per_lane,
+            )
+            candidate_dicts = [candidate.to_dict() for candidate in outcome.candidates]
+            manifest = {
+                "search_from": outcome.search_from,
+                "search_to": outcome.search_to,
+                "queries": outcome.queries,
+                "adapter_status": outcome.adapter_status,
+                "errors": outcome.errors,
+                "candidate_count": len(candidate_dicts),
+            }
+            status = "success" if not outcome.errors else "partial"
+            run_id, newly_seen = save_discovery(
+                args.project,
+                candidates=candidate_dicts,
+                manifest=manifest,
+                status=status,
+            )
+            print(
+                json.dumps(
+                    {
+                        **manifest,
+                        "run_id": run_id,
+                        "status": status,
+                        "newly_seen": newly_seen,
+                        "candidates": candidate_dicts,
+                    },
+                    indent=2,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
+            return 0 if status == "success" else 1
+
+        if args.command == "run":
+            snapshot = ingest_project(args.project)
+            save_snapshot(snapshot)
+            outcome = discover(
+                snapshot,
+                search_from=args.search_from,
+                search_to=args.search_to,
+                limit_per_lane=args.limit_per_lane,
+            )
+            candidate_dicts = [candidate.to_dict() for candidate in outcome.candidates]
+            manifest = {
+                "search_from": outcome.search_from,
+                "search_to": outcome.search_to,
+                "queries": outcome.queries,
+                "adapter_status": outcome.adapter_status,
+                "errors": outcome.errors,
+                "candidate_count": len(candidate_dicts),
+            }
+            status = "success" if not outcome.errors else "partial"
+            run_id, newly_seen = save_discovery(
+                args.project,
+                candidates=candidate_dicts,
+                manifest=manifest,
+                status=status,
+            )
+            ranked = rank_candidates(
+                snapshot,
+                outcome.candidates,
+                feedback=latest_feedback(args.project),
+            )
+            config = load_config(args.project)
+            report = write_briefing(
+                args.project,
+                project_name=snapshot.profile.project_name,
+                project_fingerprint=snapshot.fingerprint,
+                ranked=ranked,
+                manifest=manifest,
+                top_n=args.top_n or int(config.get("top_n", 5)),
+            )
+            print(
+                json.dumps(
+                    {
+                        "status": status,
+                        "run_id": run_id,
+                        "candidate_count": len(candidate_dicts),
+                        "newly_seen": newly_seen,
+                        "report": str(report.path),
+                        "report_duplicate": report.duplicate,
+                        "shown_count": report.shown_count,
+                        "suppressed_count": report.suppressed_count,
+                        "adapter_status": outcome.adapter_status,
+                        "errors": outcome.errors,
+                    },
+                    indent=2,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
+            return 0 if status == "success" else 1
+
+        if args.command == "feedback":
+            save_feedback(
+                args.project,
+                identity=args.identity,
+                label=args.label,
+                note=args.note,
+            )
+            print(
+                json.dumps(
+                    {"identity": args.identity, "label": args.label, "saved": True},
+                    indent=2,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
+            return 0
+
+        if args.command == "brief":
+            snapshot = ingest_project(args.project)
+            save_snapshot(snapshot)
+            stored = tuple(Candidate.from_dict(item) for item in load_candidates(args.project))
+            ranked = rank_candidates(
+                snapshot,
+                stored,
+                feedback=latest_feedback(args.project),
+            )
+            config = load_config(args.project)
+            today = date.today().isoformat()
+            manifest = {
+                "search_from": "stored-state",
+                "search_to": today,
+                "queries": (),
+                "adapter_status": {"network": "not-run"},
+                "errors": (),
+                "candidate_count": len(stored),
+            }
+            report = write_briefing(
+                args.project,
+                project_name=snapshot.profile.project_name,
+                project_fingerprint=snapshot.fingerprint,
+                ranked=ranked,
+                manifest=manifest,
+                top_n=args.top_n or int(config.get("top_n", 5)),
+            )
+            print(
+                json.dumps(
+                    {
+                        "report": str(report.path),
+                        "report_duplicate": report.duplicate,
+                        "shown_count": report.shown_count,
+                        "suppressed_count": report.suppressed_count,
+                    },
+                    indent=2,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
+            return 0
+
         if args.command == "access" and args.access_command == "session":
             return _open_or_print(UOFT_EBSCO_URL, args.print_only)
 
@@ -278,7 +482,7 @@ def main(argv: list[str] | None = None) -> int:
             result["duplicate"] = duplicate
             print(json.dumps(result, indent=2, ensure_ascii=False, sort_keys=True))
             return 0
-    except (AccessError, ProjectError) as exc:
+    except (AccessError, ProjectError, ValueError) as exc:
         parser.error(str(exc))
 
     parser.error("Unsupported command")

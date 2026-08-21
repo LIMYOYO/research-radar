@@ -180,3 +180,124 @@ def state_counts(project: str | Path) -> dict[str, int]:
             table: int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
             for table in ("projects", "source_files", "seed_papers", "runs", "candidates", "feedback")
         }
+
+
+def save_discovery(
+    project: str | Path,
+    *,
+    candidates: list[dict[str, object]],
+    manifest: dict[str, object],
+    status: str,
+) -> tuple[int, int]:
+    """Persist a discovery run and return (run_id, newly_seen_count)."""
+    root = str(Path(project).expanduser().resolve())
+    now = datetime.now(timezone.utc).isoformat()
+    new_count = 0
+    with connect(root) as connection:
+        project_exists = connection.execute(
+            "SELECT 1 FROM projects WHERE project_root = ?", (root,)
+        ).fetchone()
+        if not project_exists:
+            raise ValueError("Project snapshot is missing; run `research-radar profile` first.")
+        cursor = connection.execute(
+            """
+            INSERT INTO runs(project_root, run_type, started_at, completed_at, status, manifest_json)
+            VALUES (?, 'discovery', ?, ?, ?, ?)
+            """,
+            (root, now, now, status, json.dumps(manifest, ensure_ascii=False, sort_keys=True)),
+        )
+        run_id = int(cursor.lastrowid)
+        for candidate in candidates:
+            identity = str(candidate["identity"])
+            exists = connection.execute(
+                "SELECT 1 FROM candidates WHERE project_root = ? AND identity = ?",
+                (root, identity),
+            ).fetchone()
+            if not exists:
+                new_count += 1
+            connection.execute(
+                """
+                INSERT INTO candidates(project_root, identity, payload_json, first_seen_at, last_seen_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(project_root, identity) DO UPDATE SET
+                    payload_json=excluded.payload_json,
+                    last_seen_at=excluded.last_seen_at
+                """,
+                (
+                    root,
+                    identity,
+                    json.dumps(candidate, ensure_ascii=False, sort_keys=True),
+                    now,
+                    now,
+                ),
+            )
+    return run_id, new_count
+
+
+def load_candidates(project: str | Path) -> list[dict[str, object]]:
+    root = str(Path(project).expanduser().resolve())
+    with connect(root) as connection:
+        rows = connection.execute(
+            "SELECT payload_json FROM candidates WHERE project_root = ? ORDER BY last_seen_at DESC",
+            (root,),
+        ).fetchall()
+    return [json.loads(row[0]) for row in rows]
+
+
+FEEDBACK_LABELS = {
+    "read-now",
+    "cite",
+    "watch",
+    "known",
+    "off-topic",
+    "weak",
+    "duplicate",
+}
+
+
+def save_feedback(
+    project: str | Path,
+    *,
+    identity: str,
+    label: str,
+    note: str | None = None,
+) -> None:
+    if label not in FEEDBACK_LABELS:
+        raise ValueError(
+            f"Unknown feedback label {label!r}; choose one of: {', '.join(sorted(FEEDBACK_LABELS))}"
+        )
+    root = str(Path(project).expanduser().resolve())
+    now = datetime.now(timezone.utc).isoformat()
+    with connect(root) as connection:
+        exists = connection.execute(
+            "SELECT 1 FROM candidates WHERE project_root = ? AND identity = ?",
+            (root, identity),
+        ).fetchone()
+        if not exists:
+            raise ValueError(f"Unknown candidate identity for this project: {identity}")
+        connection.execute(
+            "INSERT INTO feedback(project_root, identity, label, note, created_at) VALUES (?, ?, ?, ?, ?)",
+            (root, identity, label, note, now),
+        )
+
+
+def latest_feedback(project: str | Path) -> dict[str, dict[str, object]]:
+    root = str(Path(project).expanduser().resolve())
+    with connect(root) as connection:
+        rows = connection.execute(
+            """
+            SELECT identity, label, note, created_at
+            FROM feedback
+            WHERE project_root = ?
+            ORDER BY created_at ASC
+            """,
+            (root,),
+        ).fetchall()
+    return {
+        str(row["identity"]): {
+            "label": row["label"],
+            "note": row["note"],
+            "created_at": row["created_at"],
+        }
+        for row in rows
+    }

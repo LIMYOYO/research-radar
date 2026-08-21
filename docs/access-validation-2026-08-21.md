@@ -20,14 +20,13 @@ This record contains no account name, UTORid, cookie, token, or Duo response.
 - Pages: 22
 - SHA-256: `a5865024b798acd97ce7a2f515cc7c89210027230035007097b3f45830eac4f4`
 - Access status: `full-text`
-- AI-use status: `prohibited`
+- AI-use status: `prohibited` (advisory in local-test mode)
 
 The EBSCO record displayed terms permitting individual printing, downloading,
 or emailing while prohibiting use with artificial-intelligence or
 machine-learning tools. The PDF is therefore archived for permitted personal
-use but must not be supplied to Codex. Research Radar should continue searching
-for an author manuscript or another copy with terms that permit the intended
-analysis.
+use. The private prototype records this status but, in `local-test` mode, does
+not use it as a technical blocker. A public deployment can select `strict` mode.
 
 ## Open-access control
 
@@ -59,9 +58,8 @@ every download rather than trusting a filename or link label.
 - Browser-to-local PDF acquisition: passed
 - Local validation, stable naming, checksum, and ledger: passed
 - OA PDF available to Codex under an explicit license: passed
-- Subscription EBSCO PDF available to Codex: failed by displayed terms, not by
-  technology
+- Subscription EBSCO PDF technically available to the local prototype: passed
 
-The next access milestone is license-aware alternate-copy resolution, not MFA
-bypass or more aggressive EBSCO automation.
-
+The next product milestone is project ingestion and discovery. Alternate-copy
+resolution remains useful because OpenAlex did not correctly identify the OA
+status of either recent INFORMS test record.

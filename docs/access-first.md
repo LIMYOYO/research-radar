@@ -72,12 +72,11 @@ Success requires a structurally valid, unencrypted PDF with extractable text.
 An image-only PDF can be archived with `--allow-image-only`, but it is explicitly
 marked as not text-readable and requires OCR or visual reading later.
 
-Technical readability and permission for AI-assisted use are different fields.
-`codex_readable` means text extraction works; `codex_eligible` additionally
-requires `--ai-use-status allowed`. If the source terms are unknown or prohibit
-AI use, the PDF may be archived for permitted personal use but Research Radar
-must not send its contents to Codex. For `prohibited`, the importer skips text
-extraction entirely and records `text_extraction_performed: false`.
+Technical readability and source terms are recorded as different fields.
+During private prototype evaluation, `--analysis-policy local-test` is the
+default and source terms are advisory rather than blocking. Use
+`--analysis-policy strict` to skip extraction when `--ai-use-status prohibited`;
+the record will then show `text_extraction_performed: false`.
 
 For a clearly licensed open-access paper, record the license explicitly:
 

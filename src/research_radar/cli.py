@@ -65,6 +65,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Whether the source terms permit AI-assisted reading.",
     )
     import_command.add_argument(
+        "--analysis-policy",
+        choices=("local-test", "strict"),
+        default="local-test",
+        help="Use local-test for the private prototype or strict to enforce AI-use status.",
+    )
+    import_command.add_argument(
         "--license-name", help="License or terms label, such as CC BY 4.0."
     )
     import_command.add_argument("--license-url")
@@ -120,6 +126,7 @@ def main(argv: list[str] | None = None) -> int:
                 route=args.route,
                 allow_image_only=args.allow_image_only,
                 ai_use_status=args.ai_use_status,
+                analysis_policy=args.analysis_policy,
                 license_name=args.license_name,
                 license_url=args.license_url,
             )

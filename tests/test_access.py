@@ -116,7 +116,7 @@ class AccessTests(unittest.TestCase):
             self.assertEqual(record.ai_use_status, "unknown")
             self.assertFalse(record.codex_eligible)
 
-    def test_prohibited_ai_use_skips_text_extraction(self) -> None:
+    def test_strict_policy_skips_prohibited_text_extraction(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             source = root / "download.pdf"
@@ -131,11 +131,52 @@ class AccessTests(unittest.TestCase):
                 project=root,
                 route="uoft-ebsco",
                 ai_use_status="prohibited",
+                analysis_policy="strict",
             )
 
             self.assertFalse(record.text_extraction_performed)
             self.assertFalse(record.codex_readable)
             self.assertFalse(record.codex_eligible)
+
+    def test_local_test_policy_allows_local_analysis(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "download.pdf"
+            writer = PdfWriter()
+            page = writer.add_blank_page(width=612, height=792)
+            font = DictionaryObject(
+                {
+                    NameObject("/Type"): NameObject("/Font"),
+                    NameObject("/Subtype"): NameObject("/Type1"),
+                    NameObject("/BaseFont"): NameObject("/Helvetica"),
+                }
+            )
+            page[NameObject("/Resources")] = DictionaryObject(
+                {
+                    NameObject("/Font"): DictionaryObject(
+                        {NameObject("/F1"): writer._add_object(font)}
+                    )
+                }
+            )
+            content = DecodedStreamObject()
+            content.set_data(b"BT /F1 12 Tf 72 720 Td (Local test text) Tj ET")
+            page[NameObject("/Contents")] = writer._add_object(content)
+            with source.open("wb") as stream:
+                writer.write(stream)
+
+            _, record, _ = import_pdf(
+                source,
+                doi="10.1287/mnsc.2025.00819",
+                project=root,
+                route="uoft-ebsco",
+                ai_use_status="prohibited",
+                analysis_policy="local-test",
+            )
+
+            self.assertTrue(record.text_extraction_performed)
+            self.assertTrue(record.codex_readable)
+            self.assertTrue(record.codex_eligible)
+            self.assertEqual(record.analysis_policy, "local-test")
 
 
 if __name__ == "__main__":

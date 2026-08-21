@@ -28,6 +28,7 @@ VALID_ROUTES = {
     "manual",
 }
 AI_USE_STATUSES = {"allowed", "prohibited", "unknown"}
+ANALYSIS_POLICIES = {"local-test", "strict"}
 
 
 class AccessError(ValueError):
@@ -61,6 +62,7 @@ class AcquisitionRecord:
     codex_readable: bool
     text_extraction_performed: bool
     ai_use_status: str
+    analysis_policy: str
     codex_eligible: bool
     license_name: str | None
     license_url: str | None
@@ -160,6 +162,7 @@ def import_pdf(
     route: str,
     allow_image_only: bool = False,
     ai_use_status: str = "unknown",
+    analysis_policy: str = "local-test",
     license_name: str | None = None,
     license_url: str | None = None,
 ) -> tuple[Path, AcquisitionRecord, bool]:
@@ -173,13 +176,21 @@ def import_pdf(
         raise AccessError(
             f"Unknown AI-use status {ai_use_status!r}; choose one of: {choices}"
         )
+    if analysis_policy not in ANALYSIS_POLICIES:
+        choices = ", ".join(sorted(ANALYSIS_POLICIES))
+        raise AccessError(
+            f"Unknown analysis policy {analysis_policy!r}; choose one of: {choices}"
+        )
 
     source_path = Path(source).expanduser().resolve()
+    extraction_allowed = not (
+        analysis_policy == "strict" and ai_use_status == "prohibited"
+    )
     inspection = inspect_pdf(
-        source_path, extract_text=ai_use_status != "prohibited"
+        source_path, extract_text=extraction_allowed
     )
     if (
-        ai_use_status != "prohibited"
+        extraction_allowed
         and not inspection.codex_readable
         and not allow_image_only
     ):
@@ -221,7 +232,8 @@ def import_pdf(
         codex_readable=inspection.codex_readable,
         text_extraction_performed=inspection.text_extraction_performed,
         ai_use_status=ai_use_status,
-        codex_eligible=inspection.codex_readable and ai_use_status == "allowed",
+        analysis_policy=analysis_policy,
+        codex_eligible=inspection.codex_readable and extraction_allowed,
         license_name=license_name,
         license_url=license_url,
     )

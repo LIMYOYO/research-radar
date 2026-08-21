@@ -8,8 +8,8 @@ The desired experience is closer to reading a personalized research newspaper th
 
 **Current implementation priority:** before discovery or project understanding,
 the project is building and validating the access channel from an individual
-INFORMS DOI to a legal local PDF, followed by Codex reading only when the
-source license or terms permit it. See
+INFORMS DOI to a local PDF and a Codex-readable private prototype. Source terms
+remain recorded so stricter deployments can enforce them. See
 [`docs/access-first.md`](docs/access-first.md).
 
 ## 中文概述

@@ -10,9 +10,13 @@ from research_radar.discovery import (
     DiscoveryError,
     candidate_from_crossref,
     candidate_from_openalex,
+    candidate_from_semantic_scholar,
     discover,
     merge_candidates,
     profile_queries,
+    SemanticScholarAdapter,
+    _author_watch_match,
+    _venue_watch_match,
 )
 from research_radar.project import ingest_project
 
@@ -55,6 +59,22 @@ def openalex_item() -> dict[str, Any]:
     }
 
 
+def semantic_scholar_item() -> dict[str, Any]:
+    return {
+        "paperId": "S2FUTURE",
+        "externalIds": {"DOI": "10.5555/FUTURE"},
+        "title": "Strategic Reviews and Platform Learning",
+        "authors": [{"name": "Ada Lovelace"}],
+        "year": 2026,
+        "publicationDate": "2026-08-20",
+        "venue": "Management Science",
+        "abstract": "An independent citation-graph abstract.",
+        "url": "https://www.semanticscholar.org/paper/S2FUTURE",
+        "citationCount": 5,
+        "openAccessPdf": {"url": "https://example.test/future.pdf", "status": "GREEN"},
+    }
+
+
 class FakeClient:
     def __init__(self, fail_crossref: bool = False) -> None:
         self.fail_crossref = fail_crossref
@@ -65,13 +85,22 @@ class FakeClient:
         if "api.crossref.org/works?" in url:
             if self.fail_crossref:
                 raise DiscoveryError("simulated Crossref outage")
-            return {"message": {"items": [crossref_item()]}}
+            item = crossref_item()
+            if "query.author=Junyu+Cao" in url:
+                item["author"] = [{"given": "Junyu", "family": "Cao"}]
+            elif "query.author=Michael+Luca" in url:
+                item["author"] = [{"given": "Michael", "family": "Luca"}]
+            return {"message": {"items": [item]}}
         if "api.openalex.org/works/https://doi.org/" in url:
             return {"id": "https://openalex.org/WSEED", "related_works": []}
         if "filter=cites%3AWSEED" in url:
             return {"results": [openalex_item()]}
         if "api.openalex.org/works?" in url:
             return {"results": []}
+        if "api.semanticscholar.org/graph/v1/paper/DOI:" in url and "/citations?" in url:
+            return {"data": [{"citingPaper": semantic_scholar_item()}]}
+        if "api.semanticscholar.org/graph/v1/paper/DOI:" in url and "/references?" in url:
+            return {"data": []}
         raise AssertionError(f"Unexpected URL: {url}")
 
 
@@ -102,6 +131,36 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(candidate.publication_date, "2026")  # type: ignore[union-attr]
         self.assertEqual(candidate.year, 2026)  # type: ignore[union-attr]
 
+    def test_semantic_scholar_candidate_preserves_independent_identity(self) -> None:
+        candidate = candidate_from_semantic_scholar(
+            semantic_scholar_item(), "semanticscholar:forward-citations"
+        )
+        self.assertIsNotNone(candidate)
+        self.assertEqual(candidate.identity, "doi:10.5555/future")  # type: ignore[union-attr]
+        self.assertEqual(candidate.semantic_scholar_id, "S2FUTURE")  # type: ignore[union-attr]
+        self.assertEqual(candidate.access_status, "full-text")  # type: ignore[union-attr]
+        self.assertEqual(candidate.evidence_level, "abstract")  # type: ignore[union-attr]
+
+        nullable = semantic_scholar_item()
+        nullable["authors"] = None
+        nullable["openAccessPdf"] = None
+        nullable_candidate = candidate_from_semantic_scholar(
+            nullable, "semanticscholar:reference-neighborhood"
+        )
+        self.assertEqual(nullable_candidate.authors, ())  # type: ignore[union-attr]
+
+    def test_semantic_scholar_reports_null_result_page_as_coverage_gap(self) -> None:
+        class NullDataClient:
+            def get_json(self, url: str) -> dict[str, Any]:
+                return {"data": None}
+
+        seed = ingest_project(FIXTURE).seeds[0]
+        adapter = SemanticScholarAdapter(NullDataClient())
+        self.assertEqual(adapter.citing(seed), [])
+        self.assertEqual(adapter.references(seed), [])
+        self.assertEqual(len(adapter.coverage_notes), 2)
+        self.assertIn("publisher-elided", adapter.coverage_notes[0])
+
     def test_discovery_resolves_seeds_and_deduplicates_sources(self) -> None:
         snapshot = ingest_project(FIXTURE)
         client = FakeClient()
@@ -117,8 +176,15 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(outcome.candidates[0].doi, "10.5555/future")
         self.assertTrue(outcome.adapter_status["crossref"].startswith("ok"))
         self.assertIn("2 seed(s) resolved", outcome.adapter_status["openalex"])
+        self.assertIn("2 seed(s) queried", outcome.adapter_status["semanticscholar"])
         self.assertFalse(outcome.errors)
         self.assertGreater(len(client.urls), 4)
+        self.assertIn("crossref:authors", outcome.candidates[0].discovered_by)
+        self.assertIn("crossref:venues", outcome.candidates[0].discovered_by)
+        self.assertIn(
+            "semanticscholar:forward-citations",
+            outcome.candidates[0].discovered_by,
+        )
 
     def test_one_adapter_failure_is_nonfatal(self) -> None:
         snapshot = ingest_project(FIXTURE)
@@ -177,6 +243,13 @@ class DiscoveryTests(unittest.TestCase):
             queries,
             ("How should a platform split B between pricing and recommendations?",),
         )
+
+    def test_watch_results_are_locally_rechecked_after_fuzzy_provider_search(self) -> None:
+        candidate = candidate_from_crossref(crossref_item(), "crossref:authors")
+        self.assertTrue(_author_watch_match(candidate, "Ada Lovelace"))  # type: ignore[arg-type]
+        self.assertFalse(_author_watch_match(candidate, "Michael Luca"))  # type: ignore[arg-type]
+        self.assertTrue(_venue_watch_match(candidate, "Management Science"))  # type: ignore[arg-type]
+        self.assertFalse(_venue_watch_match(candidate, "Marketing Science"))  # type: ignore[arg-type]
 
 
 if __name__ == "__main__":

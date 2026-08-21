@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-radar.local/schemas/distillation.schema.json",
+  "title": "Research Radar project-conditioned distillation",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "candidate_identity",
+    "research_question_and_setting",
+    "framework",
+    "mechanism_or_identification",
+    "main_result",
+    "project_relationship",
+    "contribution_delta",
+    "project_consequence",
+    "recommended_action",
+    "evidence_level",
+    "evidence_sources",
+    "confidence"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "candidate_identity": {"type": "string", "minLength": 1},
+    "research_question_and_setting": {"type": "string"},
+    "framework": {"type": "string"},
+    "mechanism_or_identification": {"type": "string"},
+    "main_result": {"type": "string"},
+    "boundary_conditions": {"type": "array", "items": {"type": "string"}},
+    "project_relationship": {"enum": ["supports", "contradicts", "extends", "competes", "method-lead", "background", "unknown"]},
+    "contribution_delta": {"type": "string"},
+    "project_consequence": {"type": "string"},
+    "recommended_action": {"enum": ["read-now", "cite", "watch", "ignore"]},
+    "evidence_level": {"enum": ["full-text", "abstract", "metadata"]},
+    "evidence_sources": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "unresolved_questions": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": false
+}

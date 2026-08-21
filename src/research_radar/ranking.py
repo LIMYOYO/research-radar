@@ -180,13 +180,32 @@ def rank_candidates(
             "venue_prior": _venue_score(candidate.venue, watched_venues),
             "evidence": {"metadata": 0.2, "abstract": 0.65, "full-text": 1.0}.get(candidate.evidence_level, 0.2),
         }
+        closest_seed_overlap = max(
+            (
+                _overlap(candidate_terms, tokens(seed.title or ""))
+                for seed in snapshot.seeds
+                if seed.title
+            ),
+            default=0.0,
+        )
+        fit = max(scores["topical_fit"], scores["structural_fit"])
+        scores["novelty"] = max(0.0, 1.0 - closest_seed_overlap) * fit
+        scores["priority_risk"] = min(
+            1.0,
+            2.0
+            * fit
+            * max(scores["citation_relation"], 0.25)
+            * max(scores["recency"], 0.25),
+        )
         base = (
-            0.30 * scores["structural_fit"]
-            + 0.25 * scores["topical_fit"]
-            + 0.20 * scores["citation_relation"]
-            + 0.10 * scores["recency"]
-            + 0.05 * scores["venue_prior"]
-            + 0.10 * scores["evidence"]
+            0.27 * scores["structural_fit"]
+            + 0.23 * scores["topical_fit"]
+            + 0.18 * scores["citation_relation"]
+            + 0.08 * scores["recency"]
+            + 0.04 * scores["venue_prior"]
+            + 0.08 * scores["evidence"]
+            + 0.04 * scores["novelty"]
+            + 0.08 * scores["priority_risk"]
         )
         feedback_item = feedback.get(candidate.identity, {})
         label = str(feedback_item.get("label") or "")
@@ -235,3 +254,52 @@ def rank_candidates(
             )
         )
     return tuple(sorted(ranked, key=lambda item: (item.suppressed, -item.score, item.candidate.title)))
+
+
+def apply_distillations(
+    ranked: Iterable[RankedCandidate],
+    distillations: dict[str, dict[str, object]],
+) -> tuple[RankedCandidate, ...]:
+    """Overlay persisted deep-reading results without hiding the baseline score trace."""
+    hydrated: list[RankedCandidate] = []
+    for item in ranked:
+        payload = distillations.get(item.candidate.identity)
+        if not payload:
+            hydrated.append(item)
+            continue
+        evidence_level = str(payload["evidence_level"])
+        candidate = replace(
+            item.candidate,
+            evidence_level=evidence_level,
+            access_status=(
+                "full-text" if evidence_level == "full-text" else item.candidate.access_status
+            ),
+        )
+        action = str(payload["recommended_action"])
+        scores = dict(item.scores)
+        scores["distillation_confidence"] = float(payload["confidence"])
+        hydrated.append(
+            replace(
+                item,
+                candidate=candidate,
+                scores=scores,
+                relationship=str(payload["project_relationship"]),
+                recommended_action="weak" if action == "ignore" else action,
+                why_it_matters=(
+                    f"Contribution delta: {payload['contribution_delta']} "
+                    f"Project consequence: {payload['project_consequence']}"
+                ),
+                distillation=(
+                    f"Question/setting: {payload['research_question_and_setting']} "
+                    f"Framework: {payload['framework']} "
+                    f"Mechanism: {payload['mechanism_or_identification']} "
+                    f"Main result: {payload['main_result']}"
+                ),
+                evidence_note=(
+                    f"Deep distillation evidence: {evidence_level}; confidence "
+                    f"{float(payload['confidence']):.2f}; sources: "
+                    + ", ".join(str(source) for source in payload["evidence_sources"])
+                ),
+            )
+        )
+    return tuple(hydrated)

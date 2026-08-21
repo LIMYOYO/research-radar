@@ -47,7 +47,8 @@ highest-signal paper, compare its question, primitives, mechanism, method,
 assumptions, and contribution with RESEARCH_PROFILE.md. Keep metadata,
 abstract, and full-text evidence labels distinct. If a local PDF is archived,
 use `access text DOI --project /absolute/path/to/my-research-project` before
-claiming full-text evidence. If institutional authentication is unavailable,
+claiming full-text evidence, then write and persist a JSON result through
+`distill import`. If institutional authentication is unavailable,
 leave the paper as an access request and finish the metadata report. Do not edit
 paper.tex or references.bib. End with the report path and any recovery action.
 ```
@@ -63,3 +64,8 @@ that paper from local full text.
 Review the first few scheduled runs and tune `top_n`, keywords, venues, and
 exclusions in `.research-radar/config.yaml`. Pause the task if the selected
 project is moved or the virtual environment is removed.
+
+Run `research-radar weekly --project .` in a separate weekly task if a synthesis
+of recurring concepts, relationships, venues, and unresolved full-text items is
+useful. `SEMANTIC_SCHOLAR_API_KEY` is optional; if supplied through the task
+environment it raises API reliability, and the tool never persists it.

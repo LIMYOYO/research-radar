@@ -7,10 +7,11 @@ from pathlib import Path
 from research_radar.discovery import Candidate
 from research_radar.project import ingest_project
 from research_radar.ranking import rank_candidates
-from research_radar.reporting import write_briefing
+from research_radar.reporting import write_briefing, write_weekly
 from research_radar.state import (
     last_successful_search_to,
     latest_feedback,
+    load_candidate_records,
     save_discovery,
     save_feedback,
     save_snapshot,
@@ -72,6 +73,8 @@ class RankingAndReportingTests(unittest.TestCase):
         self.assertEqual(ranked[0].candidate.identity, relevant.identity)
         self.assertGreater(ranked[0].score, ranked[1].score)
         self.assertEqual(ranked[0].relationship, "extends")
+        self.assertIn("novelty", ranked[0].scores)
+        self.assertIn("priority_risk", ranked[0].scores)
         self.assertTrue(ranked[1].suppressed)
 
     def test_feedback_suppresses_candidate_and_report_is_idempotent(self) -> None:
@@ -85,17 +88,22 @@ class RankingAndReportingTests(unittest.TestCase):
                 "Strategic Review Manipulation in Platform Recommendation",
                 "A platform learns quality while sellers manipulate review signals.",
             )
+            second_paper = candidate(
+                "doi:10.5555/second",
+                "Marketplace Learning with Strategic Signals",
+                "A marketplace learns quality from strategic seller signals.",
+            )
             manifest = {
                 "search_from": "2026-08-01",
                 "search_to": "2026-08-21",
                 "queries": ["platform learning"],
                 "adapter_status": {"openalex": "ok"},
                 "errors": [],
-                "candidate_count": 1,
+                "candidate_count": 2,
             }
             save_discovery(
                 root,
-                candidates=[paper.to_dict()],
+                candidates=[paper.to_dict(), second_paper.to_dict()],
                 manifest=manifest,
                 status="success",
             )
@@ -126,6 +134,26 @@ class RankingAndReportingTests(unittest.TestCase):
             content = first.path.read_text(encoding="utf-8")
             self.assertIn("No unseen high-signal change", content)
             self.assertIn("feedback:known", content)
+
+            records = load_candidate_records(root, first_seen_since="2000-01-01T00:00:00+00:00")
+            self.assertEqual(len(records), 2)
+            self.assertEqual(
+                {record["candidate"]["identity"] for record in records},
+                {paper.identity, second_paper.identity},
+            )
+            weekly = write_weekly(
+                root,
+                project_name=snapshot.profile.project_name,
+                project_fingerprint=snapshot.fingerprint,
+                ranked=ranked,
+                feedback=latest_feedback(root),
+                days=7,
+                top_n=10,
+            )
+            weekly_content = weekly.path.read_text(encoding="utf-8")
+            self.assertIn("Research Radar Weekly", weekly_content)
+            self.assertIn("Pattern synthesis", weekly_content)
+            self.assertIn("Full-text queue", weekly_content)
 
 
 if __name__ == "__main__":

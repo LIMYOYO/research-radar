@@ -22,21 +22,29 @@ python3 -m venv .venv
 
 ## One-paper INFORMS workflow
 
-1. Start or refresh the U of T Business Source Premier session:
+1. Resolve and inspect the available routes without downloading:
+
+   ```sh
+   .venv/bin/research-radar access resolve 10.1287/mnsc.2025.00819 \
+     --project /path/to/my-research-project
+   ```
+
+2. If no verified open copy is available, start or refresh the U of T Business
+   Source Premier session:
 
    ```sh
    .venv/bin/research-radar access session
    ```
 
-2. Complete UTORid and Duo in the browser if requested.
-3. Open the article through LibKey:
+3. Complete UTORid and Duo in the browser if requested.
+4. Open the article through LibKey:
 
    ```sh
    .venv/bin/research-radar access open 10.1287/mnsc.2025.00819
    ```
 
-4. Use the offered PDF/full-text link and download this single article.
-5. Import the downloaded file into the research project:
+5. Use the offered PDF/full-text link and download this single article.
+6. Import the downloaded file into the research project:
 
    ```sh
    .venv/bin/research-radar access import ~/Downloads/article.pdf \

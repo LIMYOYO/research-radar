@@ -19,6 +19,9 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(result.candidate_count, 20)
         self.assertEqual(result.relevant_count, 8)
         self.assertGreaterEqual(result.precision_at_5, 0.8)
+        self.assertEqual(result.keyword_baseline_precision_at_5, 0.6)
+        self.assertGreater(result.precision_at_5, result.keyword_baseline_precision_at_5)
+        self.assertGreater(result.precision_lift_at_5, 0.0)
         self.assertGreaterEqual(result.reciprocal_rank, 1.0)
         self.assertGreaterEqual(result.recall_in_visible, 0.75)
 

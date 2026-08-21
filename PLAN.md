@@ -1,6 +1,6 @@
 # Research Radar — Access-first Project Plan
 
-- Status: local beta implemented; real-project calibration remains
+- Status: v0.2 local vertical slice implemented; longitudinal validation remains
 - Last updated: 2026-08-21
 - Current priority: calibrate the complete local workflow on real research projects after passing the access gate and synthetic end-to-end test.
 
@@ -386,17 +386,22 @@ Implemented and tested:
 - research-profile, candidate, and briefing schemas;
 - TeX/BibTeX ingestion, DOI normalization, project fingerprinting, and SQLite state;
 - Crossref keyword discovery plus OpenAlex forward-citation, related-work, and keyword lanes;
+- Semantic Scholar forward-citation and backward reference-neighborhood lanes;
+- explicit author and venue watches with INFORMS and UTD24 presets;
 - cross-source identity merge, caching, retry, and adapter failure isolation;
-- explainable project-conditioned baseline ranking and evidence labels;
-- idempotent Markdown briefings and feedback-based suppression;
+- explainable project-conditioned ranking with novelty and priority-risk traces;
+- typed, validated, append-only deep distillations that hydrate later reports;
+- idempotent daily and weekly Markdown briefings and feedback-based suppression;
 - repository-scoped `$research-radar` skill;
-- a live synthetic-project run against both metadata providers.
-- a 20-candidate synthetic golden set with an executable precision/recall evaluation.
+- a live synthetic-project run against all three metadata providers;
+- a 20-candidate synthetic golden set with an executable precision/recall and keyword-baseline evaluation;
 - read-only live discovery smoke tests on one mature and one pre-citation private project.
 
-The remaining definition-of-done checks require elapsed use, not more scaffolding:
-two real researchers, four weeks of runs, and a reviewed 20-paper-per-project
-golden set. Those measurements must not be fabricated from the synthetic demo.
+The remaining product definition-of-done checks require external participation
+and elapsed use: two real researchers, four weeks of runs, and a reviewed
+20-paper-per-project golden set. The completion audit distinguishes those
+longitudinal checks from locally verified engineering behavior; neither should
+be fabricated from the synthetic demo.
 
 ## 11. Documentation basis
 

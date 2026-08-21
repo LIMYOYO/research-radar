@@ -8,7 +8,7 @@ import shutil
 import sys
 import webbrowser
 from dataclasses import asdict
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from .access import (
@@ -22,16 +22,21 @@ from .access import (
 )
 from .config import load_config
 from .discovery import Candidate, discover
+from .distillation import build_context, validate_for_project
 from .evaluation import evaluate_fixture
 from .project import ProjectError, ingest_project
-from .ranking import rank_candidates
-from .reporting import write_briefing
+from .ranking import apply_distillations, rank_candidates
+from .reporting import write_briefing, write_weekly
+from .resolution import resolve_access
 from .state import (
     FEEDBACK_LABELS,
     last_successful_search_to,
+    latest_distillations,
     latest_feedback,
     load_candidates,
+    load_candidate_records,
     save_discovery,
+    save_distillation,
     save_feedback,
     save_snapshot,
     state_counts,
@@ -47,13 +52,20 @@ top_n: 5
 lookback_days: 14
 max_seed_resolution: 12
 max_graph_seeds: 8
+max_watch_queries: 8
 sources:
   - crossref
   - openalex
+  - semanticscholar
 discovery_lanes:
   - forward-citations
+  - reference-neighborhood
   - related
   - keywords
+  - authors
+  - venues
+venue_presets:
+  - informs-core
 watch:
   keywords: []
   authors: []
@@ -83,6 +95,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     profile.add_argument("--project", type=Path, default=Path.cwd())
     profile.add_argument("--include-text", action="store_true")
+    profile.add_argument(
+        "--approve-change",
+        action="store_true",
+        help="Approve replacing the normalized profile snapshot after reviewing source changes.",
+    )
 
     doctor = subparsers.add_parser(
         "doctor", help="Check whether a project is ready for discovery."
@@ -125,6 +142,36 @@ def build_parser() -> argparse.ArgumentParser:
     )
     evaluate.add_argument("--project", type=Path, required=True)
     evaluate.add_argument("--fixture", type=Path, required=True)
+
+    weekly = subparsers.add_parser(
+        "weekly", help="Synthesize recently first-seen candidates without a network run."
+    )
+    weekly.add_argument("--project", type=Path, default=Path.cwd())
+    weekly.add_argument("--days", type=int, default=7)
+    weekly.add_argument("--top-n", type=int, default=10)
+
+    distill = subparsers.add_parser(
+        "distill", help="Build, validate, persist, or inspect deep paper distillations."
+    )
+    distill_subparsers = distill.add_subparsers(dest="distill_command", required=True)
+
+    distill_context = distill_subparsers.add_parser(
+        "context", help="Print the project, candidate, and evidence packet for one paper."
+    )
+    distill_context.add_argument("identity")
+    distill_context.add_argument("--project", type=Path, default=Path.cwd())
+
+    distill_import = distill_subparsers.add_parser(
+        "import", help="Validate and append one JSON distillation to project state."
+    )
+    distill_import.add_argument("json_file", type=Path)
+    distill_import.add_argument("--project", type=Path, default=Path.cwd())
+
+    distill_show = distill_subparsers.add_parser(
+        "show", help="Print the latest persisted distillation for one paper."
+    )
+    distill_show.add_argument("identity")
+    distill_show.add_argument("--project", type=Path, default=Path.cwd())
 
     access = subparsers.add_parser(
         "access", help="Open a legal access route or archive a downloaded PDF."
@@ -193,6 +240,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     text_export.add_argument("doi")
     text_export.add_argument("--project", type=Path, default=Path.cwd())
+
+    resolve = access_subparsers.add_parser(
+        "resolve", help="Rank open, institutional, and publisher access options for a DOI."
+    )
+    resolve.add_argument("doi")
+    resolve.add_argument("--project", type=Path, default=Path.cwd())
 
     return parser
 
@@ -292,7 +345,10 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "profile":
             snapshot = ingest_project(args.project)
-            state_file = save_snapshot(snapshot)
+            state_file = save_snapshot(
+                snapshot,
+                approve_profile_change=args.approve_change,
+            )
             result = snapshot.to_dict(include_text=args.include_text)
             result["state_file"] = str(state_file)
             result["state_counts"] = state_counts(args.project)
@@ -388,6 +444,7 @@ def main(argv: list[str] | None = None) -> int:
                 new_candidates,
                 feedback=latest_feedback(args.project),
             )
+            ranked = apply_distillations(ranked, latest_distillations(args.project))
             config = load_config(args.project)
             report = write_briefing(
                 args.project,
@@ -444,6 +501,7 @@ def main(argv: list[str] | None = None) -> int:
                 stored,
                 feedback=latest_feedback(args.project),
             )
+            ranked = apply_distillations(ranked, latest_distillations(args.project))
             config = load_config(args.project)
             today = date.today().isoformat()
             manifest = {
@@ -489,6 +547,106 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
 
+        if args.command == "weekly":
+            if args.days < 1:
+                raise ValueError("--days must be at least 1.")
+            snapshot = ingest_project(args.project)
+            save_snapshot(snapshot)
+            since = datetime.now(timezone.utc) - timedelta(days=args.days)
+            records = load_candidate_records(
+                args.project,
+                first_seen_since=since.isoformat(),
+            )
+            candidates = tuple(
+                Candidate.from_dict(record["candidate"]) for record in records
+            )
+            feedback = latest_feedback(args.project)
+            ranked = rank_candidates(snapshot, candidates, feedback=feedback)
+            ranked = apply_distillations(ranked, latest_distillations(args.project))
+            report = write_weekly(
+                args.project,
+                project_name=snapshot.profile.project_name,
+                project_fingerprint=snapshot.fingerprint,
+                ranked=ranked,
+                feedback=feedback,
+                days=args.days,
+                top_n=args.top_n,
+            )
+            print(
+                json.dumps(
+                    {
+                        "report": str(report.path),
+                        "report_duplicate": report.duplicate,
+                        "candidate_count": len(candidates),
+                        "shown_count": report.shown_count,
+                        "suppressed_count": report.suppressed_count,
+                        "days": args.days,
+                    },
+                    indent=2,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
+            return 0
+
+        if args.command == "distill":
+            snapshot = ingest_project(args.project)
+            save_snapshot(snapshot)
+            candidates = {
+                candidate.identity: candidate
+                for candidate in (
+                    Candidate.from_dict(item) for item in load_candidates(args.project)
+                )
+            }
+            if args.distill_command == "show":
+                payload = latest_distillations(args.project).get(args.identity)
+                if payload is None:
+                    raise ValueError(
+                        f"No persisted distillation for candidate: {args.identity}"
+                    )
+                print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
+                return 0
+            candidate = candidates.get(args.identity)
+            if candidate is None:
+                raise ValueError(f"Unknown candidate identity for this project: {args.identity}")
+            if args.distill_command == "context":
+                print(
+                    json.dumps(
+                        build_context(snapshot, candidate),
+                        indent=2,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    )
+                )
+                return 0
+            payload = json.loads(
+                args.json_file.expanduser().read_text(encoding="utf-8")
+            )
+            normalized = validate_for_project(
+                payload,
+                project=args.project,
+                candidate=candidate,
+            )
+            distillation_id = save_distillation(
+                args.project,
+                identity=candidate.identity,
+                payload=normalized,
+            )
+            print(
+                json.dumps(
+                    {
+                        "saved": True,
+                        "distillation_id": distillation_id,
+                        "candidate_identity": candidate.identity,
+                        "evidence_level": normalized["evidence_level"],
+                    },
+                    indent=2,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
+            return 0
+
         if args.command == "access" and args.access_command == "session":
             return _open_or_print(UOFT_EBSCO_URL, args.print_only)
 
@@ -516,6 +674,22 @@ def main(argv: list[str] | None = None) -> int:
             result["duplicate"] = duplicate
             print(json.dumps(result, indent=2, ensure_ascii=False, sort_keys=True))
             return 0
+
+        if args.command == "access" and args.access_command == "resolve":
+            project = args.project.expanduser().resolve()
+            result = resolve_access(
+                args.doi,
+                cache_dir=project / ".research-radar" / "cache" / "access",
+            )
+            print(
+                json.dumps(
+                    result.to_dict(),
+                    indent=2,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
+            return 0 if not result.errors else 1
 
         if args.command == "access" and args.access_command == "import":
             destination, record, duplicate = import_pdf(

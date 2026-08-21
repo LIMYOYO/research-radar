@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-radar.local/schemas/access-result.schema.json",
+  "title": "Research Radar DOI access resolution",
+  "type": "object",
+  "required": ["schema_version", "doi", "recommended", "options", "adapter_status", "errors"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "doi": {"type": "string", "pattern": "^10\\.\\d{4,9}/"},
+    "recommended": {"$ref": "#/$defs/option"},
+    "options": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/option"}},
+    "adapter_status": {"type": "object", "additionalProperties": {"type": "string"}},
+    "errors": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "option": {
+      "type": "object",
+      "required": ["route", "url", "access_type", "source", "confidence"],
+      "properties": {
+        "route": {"type": "string"},
+        "url": {"type": "string", "format": "uri"},
+        "access_type": {"enum": ["full-text", "full-text-candidate", "publisher-resource", "institutional-handoff", "publisher-landing"]},
+        "content_type": {"type": ["string", "null"]},
+        "version": {"type": ["string", "null"]},
+        "license": {"type": ["string", "null"]},
+        "source": {"type": "string"},
+        "confidence": {"type": "string"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

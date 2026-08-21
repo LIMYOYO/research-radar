@@ -30,6 +30,10 @@ COMMAND_WITH_TEXT_PATTERN = re.compile(
     r"\*?\{([^{}]*)\}"
 )
 DOI_FIELD_CANDIDATES = ("doi", "url", "note")
+ARXIV_PATTERN = re.compile(
+    r"(?:arxiv(?:\.org/(?:abs|pdf)/|:)?\s*)?(\d{4}\.\d{4,5}(?:v\d+)?)",
+    re.IGNORECASE,
+)
 
 
 class ProjectError(ValueError):
@@ -52,6 +56,7 @@ class SeedPaper:
     year: int | None
     venue: str | None
     doi: str | None
+    preprint_id: str | None
     url: str | None
     entry_type: str | None
     source_file: str
@@ -61,6 +66,8 @@ class SeedPaper:
     def identity(self) -> str:
         if self.doi:
             return f"doi:{self.doi}"
+        if self.preprint_id:
+            return f"preprint:{self.preprint_id.lower()}"
         normalized_title = normalize_title(self.title or "")
         if normalized_title:
             return f"title:{normalized_title}"
@@ -315,6 +322,18 @@ def _entry_doi(entry: dict[str, object]) -> str | None:
     return None
 
 
+def _entry_preprint_id(entry: dict[str, object]) -> str | None:
+    archive = str(entry.get("archiveprefix") or entry.get("archivePrefix") or "")
+    values = [entry.get("eprint"), entry.get("url"), entry.get("note")]
+    for value in values:
+        if not value:
+            continue
+        match = ARXIV_PATTERN.search(str(value))
+        if match and (archive.lower() == "arxiv" or "arxiv" in str(value).lower()):
+            return f"arxiv:{match.group(1).lower()}"
+    return None
+
+
 def parse_bibliography(
     root: Path,
     cited_keys: Iterable[str],
@@ -346,6 +365,7 @@ def parse_bibliography(
                     year=_parse_year(entry.get("year")),
                     venue=_clean_bib_value(venue),
                     doi=_entry_doi(entry),
+                    preprint_id=_entry_preprint_id(entry),
                     url=_clean_bib_value(entry.get("url")),
                     entry_type=_clean_bib_value(entry.get("ENTRYTYPE")),
                     source_file=path.relative_to(root).as_posix(),

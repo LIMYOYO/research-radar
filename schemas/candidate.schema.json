@@ -9,6 +9,7 @@
     "identity": {"type": "string", "minLength": 1},
     "doi": {"type": ["string", "null"]},
     "openalex_id": {"type": ["string", "null"]},
+    "semantic_scholar_id": {"type": ["string", "null"]},
     "title": {"type": "string", "minLength": 1},
     "authors": {"type": "array", "items": {"type": "string"}},
     "year": {"type": ["integer", "null"]},

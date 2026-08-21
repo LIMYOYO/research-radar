@@ -8,6 +8,7 @@ from typing import Any
 import yaml
 
 from .project import ProjectError
+from .presets import VENUE_PRESETS
 
 
 DEFAULTS: dict[str, Any] = {
@@ -17,9 +18,18 @@ DEFAULTS: dict[str, Any] = {
     "lookback_days": 14,
     "max_seed_resolution": 12,
     "max_graph_seeds": 8,
-    "sources": ["crossref", "openalex"],
-    "discovery_lanes": ["forward-citations", "related", "keywords"],
+    "max_watch_queries": 8,
+    "sources": ["crossref", "openalex", "semanticscholar"],
+    "discovery_lanes": [
+        "forward-citations",
+        "reference-neighborhood",
+        "related",
+        "keywords",
+        "authors",
+        "venues",
+    ],
     "watch": {"keywords": [], "authors": [], "venues": []},
+    "venue_presets": [],
     "exclude": {"keywords": []},
     "access": {"institution": None, "analysis_policy": "local-test"},
 }
@@ -51,4 +61,26 @@ def load_config(project: str | Path) -> dict[str, Any]:
         raise ProjectError(
             f"Unsupported config schema_version {config.get('schema_version')!r}; expected 1."
         )
+    presets = config.get("venue_presets", [])
+    if not isinstance(presets, list):
+        raise ProjectError("venue_presets must be a YAML list.")
+    unknown = sorted(str(item) for item in presets if str(item) not in VENUE_PRESETS)
+    if unknown:
+        raise ProjectError(
+            "Unknown venue preset(s): "
+            + ", ".join(unknown)
+            + ". Choose from: "
+            + ", ".join(sorted(VENUE_PRESETS))
+        )
     return config
+
+
+def configured_watch(config: dict[str, Any], kind: str) -> tuple[str, ...]:
+    values = config.get("watch", {}).get(kind, [])
+    if not isinstance(values, list):
+        raise ProjectError(f"watch.{kind} must be a YAML list.")
+    result = [str(item).strip() for item in values if str(item).strip()]
+    if kind == "venues":
+        for name in config.get("venue_presets", []):
+            result.extend(VENUE_PRESETS[str(name)])
+    return tuple(dict.fromkeys(result))

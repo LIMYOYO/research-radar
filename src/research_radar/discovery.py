@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import html
 import json
+import os
 import re
 import time
 from difflib import SequenceMatcher
@@ -17,13 +18,14 @@ from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 from .access import AccessError, normalize_doi
-from .config import load_config
+from .config import configured_watch, load_config
 from .project import ProjectSnapshot, SeedPaper, normalize_title
 
 
 CROSSREF_API = "https://api.crossref.org"
 OPENALEX_API = "https://api.openalex.org"
-USER_AGENT = "research-radar/0.1 (https://github.com/research-radar/research-radar)"
+SEMANTIC_SCHOLAR_API = "https://api.semanticscholar.org/graph/v1"
+USER_AGENT = "research-radar/0.2 (https://github.com/research-radar/research-radar)"
 
 
 class DiscoveryError(RuntimeError):
@@ -51,6 +53,7 @@ class Candidate:
     evidence_level: str
     cited_by_count: int | None = None
     publication_date: str | None = None
+    semantic_scholar_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -105,7 +108,11 @@ class HttpJsonClient:
         error: Exception | None = None
         for attempt in range(self.retries + 1):
             try:
-                request = Request(url, headers={"Accept": "application/json", "User-Agent": USER_AGENT})
+                headers = {"Accept": "application/json", "User-Agent": USER_AGENT}
+                api_key = os.environ.get("SEMANTIC_SCHOLAR_API_KEY")
+                if api_key and url.startswith(SEMANTIC_SCHOLAR_API):
+                    headers["x-api-key"] = api_key
+                request = Request(url, headers=headers)
                 with urlopen(request, timeout=self.timeout) as response:
                     payload = json.loads(response.read().decode("utf-8"))
                 if cache_path:
@@ -257,6 +264,53 @@ def candidate_from_openalex(item: dict[str, Any], lane: str) -> Candidate | None
     )
 
 
+def candidate_from_semantic_scholar(
+    item: dict[str, Any], lane: str
+) -> Candidate | None:
+    title = _clean_markup(item.get("title"))
+    if not title:
+        return None
+    external_ids = item.get("externalIds") if isinstance(item.get("externalIds"), dict) else {}
+    doi = _safe_doi(external_ids.get("DOI"))
+    semantic_scholar_id = str(item.get("paperId") or "") or None
+    identity = (
+        f"doi:{doi}"
+        if doi
+        else (
+            f"semantic-scholar:{semantic_scholar_id.lower()}"
+            if semantic_scholar_id
+            else f"title:{normalize_title(title)}"
+        )
+    )
+    authors = tuple(
+        str(author.get("name"))
+        for author in (item.get("authors") or [])
+        if isinstance(author, dict) and author.get("name")
+    )
+    abstract = _clean_markup(item.get("abstract"))
+    open_pdf = item.get("openAccessPdf") if isinstance(item.get("openAccessPdf"), dict) else {}
+    url = open_pdf.get("url") or item.get("url") or (f"https://doi.org/{doi}" if doi else None)
+    year = item.get("year")
+    return Candidate(
+        schema_version=1,
+        identity=identity,
+        doi=doi,
+        openalex_id=None,
+        title=title,
+        authors=authors,
+        year=int(year) if year else None,
+        venue=str(item.get("venue")) if item.get("venue") else None,
+        abstract=abstract,
+        url=str(url) if url else None,
+        discovered_by=(lane,),
+        access_status=("full-text" if open_pdf.get("url") else ("abstract" if abstract else "metadata-only")),
+        evidence_level="abstract" if abstract else "metadata",
+        cited_by_count=item.get("citationCount"),
+        publication_date=item.get("publicationDate"),
+        semantic_scholar_id=semantic_scholar_id,
+    )
+
+
 class CrossrefAdapter:
     name = "crossref"
 
@@ -264,11 +318,18 @@ class CrossrefAdapter:
         self.client = client
 
     def search(
-        self, query: str, *, from_date: str, until_date: str, limit: int = 20
+        self,
+        query: str,
+        *,
+        from_date: str,
+        until_date: str,
+        limit: int = 20,
+        field: str = "query.bibliographic",
+        lane: str = "crossref:keywords",
     ) -> list[Candidate]:
         params = urlencode(
             {
-                "query.bibliographic": query,
+                field: query,
                 "filter": f"from-pub-date:{from_date},until-pub-date:{until_date}",
                 "rows": limit,
                 "select": "DOI,title,author,published-print,published-online,published,issued,created,container-title,abstract,URL,is-referenced-by-count",
@@ -276,7 +337,11 @@ class CrossrefAdapter:
         )
         payload = self.client.get_json(f"{CROSSREF_API}/works?{params}")
         items = payload.get("message", {}).get("items", [])
-        return [candidate for item in items if (candidate := candidate_from_crossref(item, "crossref:keywords"))]
+        return [
+            candidate
+            for item in items
+            if (candidate := candidate_from_crossref(item, lane))
+        ]
 
     def resolve_seed(self, seed: SeedPaper) -> Candidate | None:
         if not seed.title:
@@ -367,6 +432,76 @@ class OpenAlexAdapter:
         return [candidate for item in payload.get("results", []) if (candidate := candidate_from_openalex(item, "openalex:keywords"))]
 
 
+class SemanticScholarAdapter:
+    name = "semanticscholar"
+    fields = (
+        "paperId,externalIds,title,authors,year,venue,abstract,url,"
+        "citationCount,publicationDate,openAccessPdf"
+    )
+
+    def __init__(self, client: JsonClient) -> None:
+        self.client = client
+        self.coverage_notes: list[str] = []
+
+    @staticmethod
+    def _seed_identifier(seed: SeedPaper) -> str | None:
+        if seed.doi:
+            return quote(f"DOI:{seed.doi}", safe=":")
+        if seed.preprint_id and seed.preprint_id.startswith("arxiv:"):
+            return quote(f"ARXIV:{seed.preprint_id.removeprefix('arxiv:')}", safe=":")
+        return None
+
+    def citing(self, seed: SeedPaper, *, limit: int = 20) -> list[Candidate]:
+        identifier = self._seed_identifier(seed)
+        if not identifier:
+            return []
+        params = urlencode({"fields": self.fields, "limit": min(limit, 1000)})
+        payload = self.client.get_json(
+            f"{SEMANTIC_SCHOLAR_API}/paper/{identifier}/citations?{params}"
+        )
+        if payload.get("data") is None:
+            self.coverage_notes.append(
+                f"{seed.citation_key}: citation data unavailable or publisher-elided"
+            )
+            return []
+        return [
+            candidate
+            for record in (payload.get("data") or [])
+            if isinstance(record, dict)
+            and isinstance(record.get("citingPaper"), dict)
+            and (
+                candidate := candidate_from_semantic_scholar(
+                    record["citingPaper"], "semanticscholar:forward-citations"
+                )
+            )
+        ]
+
+    def references(self, seed: SeedPaper, *, limit: int = 20) -> list[Candidate]:
+        identifier = self._seed_identifier(seed)
+        if not identifier:
+            return []
+        params = urlencode({"fields": self.fields, "limit": min(limit, 1000)})
+        payload = self.client.get_json(
+            f"{SEMANTIC_SCHOLAR_API}/paper/{identifier}/references?{params}"
+        )
+        if payload.get("data") is None:
+            self.coverage_notes.append(
+                f"{seed.citation_key}: reference data unavailable or publisher-elided"
+            )
+            return []
+        return [
+            candidate
+            for record in payload.get("data", [])
+            if isinstance(record, dict)
+            and isinstance(record.get("citedPaper"), dict)
+            and (
+                candidate := candidate_from_semantic_scholar(
+                    record["citedPaper"], "semanticscholar:reference-neighborhood"
+                )
+            )
+        ]
+
+
 def _merge_candidate(left: Candidate, right: Candidate) -> Candidate:
     lanes = tuple(sorted(set(left.discovered_by) | set(right.discovered_by)))
     authors = left.authors if len(left.authors) >= len(right.authors) else right.authors
@@ -377,6 +512,7 @@ def _merge_candidate(left: Candidate, right: Candidate) -> Candidate:
         identity=left.identity if left.doi else right.identity,
         doi=left.doi or right.doi,
         openalex_id=left.openalex_id or right.openalex_id,
+        semantic_scholar_id=left.semantic_scholar_id or right.semantic_scholar_id,
         title=left.title if len(left.title) >= len(right.title) else right.title,
         authors=authors,
         year=left.year or right.year,
@@ -447,6 +583,48 @@ def profile_queries(snapshot: ProjectSnapshot, config: dict[str, Any]) -> tuple[
     return tuple(dict.fromkeys(queries))
 
 
+def profile_watch_items(
+    snapshot: ProjectSnapshot,
+    config: dict[str, Any],
+    kind: str,
+) -> tuple[str, ...]:
+    items = list(configured_watch(config, kind))
+    watch_section = snapshot.profile.sections.get("watch", "")
+    label = "authors?" if kind == "authors" else "venues?(?:\\s+or\\s+working-paper\\s+series)?"
+    match = re.search(
+        rf"(?im)^\s*[-*]?\s*{label}\s*:\s*(.+)$",
+        watch_section,
+    )
+    if match:
+        items.extend(part.strip() for part in match.group(1).split(",") if part.strip())
+    return tuple(dict.fromkeys(items))
+
+
+def _author_watch_match(candidate: Candidate, watched: str) -> bool:
+    target = normalize_title(watched).split()
+    if not target:
+        return False
+    target_first = target[0]
+    target_last = target[-1]
+    for author in candidate.authors:
+        parts = normalize_title(author).split()
+        if not parts or parts[-1] != target_last:
+            continue
+        if len(target) == 1:
+            return True
+        if parts[0] == target_first or parts[0][:1] == target_first[:1]:
+            return True
+    return False
+
+
+def _venue_watch_match(candidate: Candidate, watched: str) -> bool:
+    if not candidate.venue:
+        return False
+    actual = normalize_title(candidate.venue)
+    target = normalize_title(watched)
+    return bool(actual and target and (actual == target or target in actual or actual in target))
+
+
 def discover(
     snapshot: ProjectSnapshot,
     *,
@@ -466,6 +644,8 @@ def discover(
     sources = set(config.get("sources", []))
     lanes = set(config.get("discovery_lanes", []))
     queries = profile_queries(snapshot, config)
+    author_queries = profile_watch_items(snapshot, config, "authors")
+    venue_queries = profile_watch_items(snapshot, config, "venues")
     found: list[Candidate] = []
     statuses: dict[str, str] = {}
     errors: list[str] = []
@@ -482,6 +662,35 @@ def discover(
             if "keywords" in lanes:
                 for query in queries:
                     found.extend(adapter.search(query, from_date=search_from, until_date=search_to, limit=limit_per_lane))
+            watch_limit = max(0, int(config.get("max_watch_queries", 8)))
+            if "authors" in lanes:
+                for author in author_queries[:watch_limit]:
+                    found.extend(
+                        candidate
+                        for candidate in adapter.search(
+                            author,
+                            from_date=search_from,
+                            until_date=search_to,
+                            limit=limit_per_lane,
+                            field="query.author",
+                            lane="crossref:authors",
+                        )
+                        if _author_watch_match(candidate, author)
+                    )
+            if "venues" in lanes:
+                for venue in venue_queries[:watch_limit]:
+                    found.extend(
+                        candidate
+                        for candidate in adapter.search(
+                            venue,
+                            from_date=search_from,
+                            until_date=search_to,
+                            limit=limit_per_lane,
+                            field="query.container-title",
+                            lane="crossref:venues",
+                        )
+                        if _venue_watch_match(candidate, venue)
+                    )
             resolution_limit = max(0, int(config.get("max_seed_resolution", 12)))
             for index, seed in list(enumerate(effective_seeds)):
                 if seed.doi or not seed.title or resolution_attempts >= resolution_limit:
@@ -554,6 +763,32 @@ def discover(
             )
         else:
             statuses[adapter.name] = f"ok ({resolved} seed(s) resolved)"
+
+    if "semanticscholar" in sources:
+        adapter = SemanticScholarAdapter(client)
+        failures = 0
+        queried = 0
+        graph_limit = max(0, int(config.get("max_graph_seeds", 8)))
+        graph_seeds = [
+            seed for seed in effective_seeds if seed.doi or seed.preprint_id
+        ][:graph_limit]
+        for seed in graph_seeds:
+            try:
+                if "forward-citations" in lanes:
+                    found.extend(adapter.citing(seed, limit=limit_per_lane))
+                if "reference-neighborhood" in lanes:
+                    found.extend(adapter.references(seed, limit=limit_per_lane))
+                queried += 1
+            except Exception as exc:
+                failures += 1
+                errors.append(f"{adapter.name} seed {seed.citation_key}: {exc}")
+        if failures or adapter.coverage_notes:
+            statuses[adapter.name] = (
+                f"partial ({queried} seed(s) queried; {failures} failure(s); "
+                f"{len(adapter.coverage_notes)} coverage gap(s))"
+            )
+        else:
+            statuses[adapter.name] = f"ok ({queried} seed(s) queried)"
 
     seed_identities = {seed.identity for seed in snapshot.seeds} | {
         seed.identity for seed in effective_seeds

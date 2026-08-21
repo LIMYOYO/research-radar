@@ -11,7 +11,11 @@ from pathlib import Path
 from .project import ProjectSnapshot
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 3
+
+
+class ProfileChangePending(ValueError):
+    """Raised when the normalized research profile changed without approval."""
 
 
 SCHEMA_SQL = """
@@ -47,6 +51,7 @@ CREATE TABLE IF NOT EXISTS seed_papers (
     year INTEGER,
     venue TEXT,
     doi TEXT,
+    preprint_id TEXT,
     url TEXT,
     entry_type TEXT,
     source_file TEXT NOT NULL,
@@ -84,6 +89,16 @@ CREATE TABLE IF NOT EXISTS feedback (
     PRIMARY KEY (project_root, identity, created_at),
     FOREIGN KEY (project_root) REFERENCES projects(project_root) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS distillations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_root TEXT NOT NULL,
+    identity TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (project_root) REFERENCES projects(project_root) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS distillations_latest_idx
+    ON distillations(project_root, identity, id DESC);
 """
 
 
@@ -97,6 +112,11 @@ def connect(project: str | Path) -> sqlite3.Connection:
     connection = sqlite3.connect(path)
     connection.row_factory = sqlite3.Row
     connection.executescript(SCHEMA_SQL)
+    seed_columns = {
+        str(row[1]) for row in connection.execute("PRAGMA table_info(seed_papers)")
+    }
+    if "preprint_id" not in seed_columns:
+        connection.execute("ALTER TABLE seed_papers ADD COLUMN preprint_id TEXT")
     connection.execute(
         "INSERT INTO metadata(key, value) VALUES('schema_version', ?) "
         "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
@@ -105,11 +125,30 @@ def connect(project: str | Path) -> sqlite3.Connection:
     return connection
 
 
-def save_snapshot(snapshot: ProjectSnapshot) -> Path:
+def save_snapshot(
+    snapshot: ProjectSnapshot,
+    *,
+    approve_profile_change: bool = False,
+) -> Path:
     now = datetime.now(timezone.utc).isoformat()
     root = snapshot.project_root
     path = state_path(root)
     with connect(root) as connection:
+        previous = connection.execute(
+            "SELECT profile_json FROM projects WHERE project_root = ?", (root,)
+        ).fetchone()
+        new_profile_json = json.dumps(
+            asdict(snapshot.profile), ensure_ascii=False, sort_keys=True
+        )
+        if (
+            previous
+            and previous["profile_json"] != new_profile_json
+            and not approve_profile_change
+        ):
+            raise ProfileChangePending(
+                "The research profile changed since the last approved snapshot. "
+                "Review it, then run `research-radar profile --approve-change --project ...`."
+            )
         connection.execute(
             """
             INSERT INTO projects(
@@ -129,7 +168,7 @@ def save_snapshot(snapshot: ProjectSnapshot) -> Path:
                 snapshot.profile.project_name,
                 snapshot.fingerprint,
                 snapshot.profile.source_file,
-                json.dumps(asdict(snapshot.profile), ensure_ascii=False, sort_keys=True),
+                new_profile_json,
                 snapshot.manuscript_text,
                 now,
             ),
@@ -150,8 +189,8 @@ def save_snapshot(snapshot: ProjectSnapshot) -> Path:
             """
             INSERT INTO seed_papers(
                 project_root, identity, citation_key, title, authors_json, year,
-                venue, doi, url, entry_type, source_file, cited_in_manuscript
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                venue, doi, preprint_id, url, entry_type, source_file, cited_in_manuscript
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -163,6 +202,7 @@ def save_snapshot(snapshot: ProjectSnapshot) -> Path:
                     seed.year,
                     seed.venue,
                     seed.doi,
+                    seed.preprint_id,
                     seed.url,
                     seed.entry_type,
                     seed.source_file,
@@ -178,7 +218,15 @@ def state_counts(project: str | Path) -> dict[str, int]:
     with connect(project) as connection:
         return {
             table: int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
-            for table in ("projects", "source_files", "seed_papers", "runs", "candidates", "feedback")
+            for table in (
+                "projects",
+                "source_files",
+                "seed_papers",
+                "runs",
+                "candidates",
+                "feedback",
+                "distillations",
+            )
         }
 
 
@@ -244,6 +292,33 @@ def load_candidates(project: str | Path) -> list[dict[str, object]]:
     return [json.loads(row[0]) for row in rows]
 
 
+def load_candidate_records(
+    project: str | Path,
+    *,
+    first_seen_since: str | None = None,
+) -> list[dict[str, object]]:
+    root = str(Path(project).expanduser().resolve())
+    query = (
+        "SELECT payload_json, first_seen_at, last_seen_at FROM candidates "
+        "WHERE project_root = ?"
+    )
+    parameters: list[object] = [root]
+    if first_seen_since:
+        query += " AND first_seen_at >= ?"
+        parameters.append(first_seen_since)
+    query += " ORDER BY first_seen_at DESC, identity"
+    with connect(root) as connection:
+        rows = connection.execute(query, parameters).fetchall()
+    return [
+        {
+            "candidate": json.loads(row["payload_json"]),
+            "first_seen_at": row["first_seen_at"],
+            "last_seen_at": row["last_seen_at"],
+        }
+        for row in rows
+    ]
+
+
 FEEDBACK_LABELS = {
     "read-now",
     "cite",
@@ -298,6 +373,53 @@ def latest_feedback(project: str | Path) -> dict[str, dict[str, object]]:
             "label": row["label"],
             "note": row["note"],
             "created_at": row["created_at"],
+        }
+        for row in rows
+    }
+
+
+def save_distillation(
+    project: str | Path,
+    *,
+    identity: str,
+    payload: dict[str, object],
+) -> int:
+    """Append one validated distillation and return its immutable row id."""
+    root = str(Path(project).expanduser().resolve())
+    now = datetime.now(timezone.utc).isoformat()
+    with connect(root) as connection:
+        candidate = connection.execute(
+            "SELECT 1 FROM candidates WHERE project_root = ? AND identity = ?",
+            (root, identity),
+        ).fetchone()
+        if not candidate:
+            raise ValueError(f"Unknown candidate identity for this project: {identity}")
+        cursor = connection.execute(
+            """
+            INSERT INTO distillations(project_root, identity, payload_json, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (root, identity, json.dumps(payload, ensure_ascii=False, sort_keys=True), now),
+        )
+        return int(cursor.lastrowid)
+
+
+def latest_distillations(project: str | Path) -> dict[str, dict[str, object]]:
+    root = str(Path(project).expanduser().resolve())
+    with connect(root) as connection:
+        rows = connection.execute(
+            """
+            SELECT identity, payload_json, created_at
+            FROM distillations
+            WHERE project_root = ?
+            ORDER BY id ASC
+            """,
+            (root,),
+        ).fetchall()
+    return {
+        str(row["identity"]): {
+            **json.loads(row["payload_json"]),
+            "stored_at": row["created_at"],
         }
         for row in rows
     }

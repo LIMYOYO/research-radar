@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.0 — 2026-08-21
+
+- Added ranked DOI access resolution across OpenAlex, Crossref, LibKey, and the canonical publisher route.
+- Added INFORMS, INFORMS Core, and UTD24 venue presets plus explicit author and venue watch lanes.
+- Added Semantic Scholar forward-citation and reference-neighborhood discovery with optional API-key support and partial-failure isolation.
+- Added arXiv preprint identity, novelty and priority-risk ranking features, and profile-change approval.
+- Added typed deep-distillation context, validation, append-only persistence, and report hydration.
+- Added deterministic weekly synthesis and a full-text follow-up queue.
+- Added a lexical keyword baseline; the synthetic fixture records precision@5 of 0.60 for keywords and 1.00 for Research Radar.
+
 ## 0.1.0 — 2026-08-21
 
 - Added U of T / INFORMS access routing, PDF validation, provenance, and local text export.

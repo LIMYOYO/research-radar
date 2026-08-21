@@ -6,10 +6,13 @@ Research Radar is intended for researchers who already have a paper in progress 
 
 The desired experience is closer to reading a personalized research newspaper than running a literature review from scratch.
 
-**Current status:** the local beta now covers the full vertical slice: U of T /
-INFORMS PDF intake, TeX and BibTeX ingestion, Crossref and OpenAlex discovery,
-explainable ranking, incremental Markdown briefings, feedback, local full-text
-export, and a repository-scoped Codex skill. See [Quick start](#quick-start).
+**Current status:** version 0.2.0 covers the local vertical slice: U of T /
+INFORMS PDF intake, TeX and BibTeX ingestion, Crossref, OpenAlex, and Semantic
+Scholar discovery, explainable ranking, persisted deep distillation,
+incremental daily and weekly briefings, feedback, local full-text export, and a
+repository-scoped Codex skill. Longitudinal validation with two researchers is
+still an explicit release criterion, not a completed claim. See
+[Quick start](#quick-start).
 
 ## 中文概述
 
@@ -114,7 +117,12 @@ No single source is expected to provide sufficient recall. The planned discovery
 - author, lab, conference, working-paper, and journal monitoring;
 - selected journal sets such as UTD24 and domain-specific INFORMS outlets.
 
-Candidate metadata sources include Crossref, OpenAlex, Semantic Scholar, publisher feeds, and institution-provided discovery services. Each source will be implemented behind an adapter because coverage, identifiers, rate limits, and licensing differ.
+The implemented metadata sources are Crossref, OpenAlex, and Semantic Scholar.
+Crossref supplies bibliographic, author, and venue queries; OpenAlex supplies
+forward citations, related works, and keyword search; Semantic Scholar adds an
+independent citation graph and backward reference neighborhood. Each source is
+behind an adapter because coverage, identifiers, rate limits, and licensing
+differ.
 
 ### Access resolution
 
@@ -215,6 +223,7 @@ The first CLI slice is implemented locally:
 
 ```sh
 research-radar access session
+research-radar access resolve 10.1287/mnsc.2025.00819 --project /path/to/project
 research-radar access open 10.1287/mnsc.2025.00819
 research-radar access import ~/Downloads/article.pdf \
   --doi 10.1287/mnsc.2025.00819 \
@@ -226,9 +235,11 @@ research-radar access text 10.1287/mnsc.2025.00819 \
   --project /path/to/my-research-project
 ```
 
-Installation and the complete manual test are documented in
+`access resolve` is read-only: it ranks reported open copies, publisher
+full-text candidates, LibKey, and the canonical DOI route before any manual
+download. Installation and the complete manual test are documented in
 [`docs/access-first.md`](docs/access-first.md). A repository-scoped skill and
-scheduled workflow remain later milestones.
+scheduled-workflow guide are included in the repository.
 
 The first real U of T/INFORMS validation is recorded in
 [`docs/access-validation-2026-08-21.md`](docs/access-validation-2026-08-21.md).
@@ -249,6 +260,7 @@ python3 -m venv .venv
 # Fill in RESEARCH_PROFILE.md and add/keep paper.tex plus references.bib.
 .venv/bin/research-radar doctor --project /path/to/my-research-project
 .venv/bin/research-radar run --project /path/to/my-research-project
+.venv/bin/research-radar weekly --project /path/to/my-research-project
 ```
 
 The briefing is written under
@@ -265,6 +277,24 @@ For Codex, invoke `$research-radar` from the research folder. The checked-in
 skill lives at [`.agents/skills/research-radar`](.agents/skills/research-radar).
 Daily desktop setup and the tested task prompt are in
 [`docs/automation.md`](docs/automation.md).
+
+For a high-signal candidate, build the exact evidence packet and persist the
+deep-reading result:
+
+```sh
+.venv/bin/research-radar distill context 'doi:10.xxxx/example' \
+  --project /path/to/my-research-project
+# Codex writes one JSON object matching schemas/distillation.schema.json.
+.venv/bin/research-radar distill import distillation.json \
+  --project /path/to/my-research-project
+.venv/bin/research-radar distill show 'doi:10.xxxx/example' \
+  --project /path/to/my-research-project
+```
+
+An `abstract` distillation requires an indexed abstract. A `full-text`
+distillation is rejected unless an eligible local paper is present. Imported
+distillations are append-only in SQLite and automatically replace the shallow
+metadata summary in later offline and weekly briefings.
 
 ## What the beta does and does not do
 
@@ -289,13 +319,25 @@ Run the checked-in 20-candidate offline ranking evaluation with:
   --fixture tests/fixtures/golden-candidates.json
 ```
 
-The synthetic baseline currently records precision@5 of 1.0 and precision@10
-of 0.889. These are regression checks, not a claim about real-project quality.
+The synthetic fixture currently records Research Radar precision@5/10 of
+1.00/1.00 versus a title-and-abstract keyword baseline of 0.60/0.70. These are
+regression checks, not a claim about real-project quality.
+
+Example research profiles are available for
+[analytical OM](examples/profiles/analytical-om.md),
+[empirical business research](examples/profiles/empirical-business.md), and an
+[adjacent computational field](examples/profiles/adjacent-computational.md).
+The rationale for keeping the first release as a CLI plus repository skill,
+rather than requiring a plugin, is documented in
+[`docs/plugin-packaging-evaluation.md`](docs/plugin-packaging-evaluation.md).
+The requirement-by-requirement status is recorded in
+[`docs/completion-audit-2026-08-21.md`](docs/completion-audit-2026-08-21.md).
 
 ## References
 
 - [OpenAI: Build skills](https://learn.chatgpt.com/codex/skills)
 - [OpenAI: Scheduled tasks](https://learn.chatgpt.com/docs/automations)
+- [Semantic Scholar Academic Graph API](https://api.semanticscholar.org/api-docs/)
 - [INFORMS institutional journal access](https://www.informs.org/Publications/Journal-Subscriptions)
 - [University of Toronto electronic resource access](https://library.utoronto.ca/use/how-to/access-electronic-resources)
 

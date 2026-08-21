@@ -1,0 +1,4 @@
+interface:
+  display_name: "Research Radar"
+  short_description: "Find and distill papers for a research project"
+  default_prompt: "Use $research-radar to run the literature radar for this project and explain the highest-signal new papers."

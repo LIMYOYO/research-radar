@@ -10,6 +10,7 @@ from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
 from research_radar.access import (
     AccessError,
+    export_pdf_text,
     import_pdf,
     libkey_url,
     normalize_doi,
@@ -177,6 +178,22 @@ class AccessTests(unittest.TestCase):
             self.assertTrue(record.codex_readable)
             self.assertTrue(record.codex_eligible)
             self.assertEqual(record.analysis_policy, "local-test")
+
+            destination, exported, duplicate = export_pdf_text(
+                root,
+                doi="10.1287/mnsc.2025.00819",
+            )
+            self.assertFalse(duplicate)
+            self.assertTrue(destination.is_file())
+            self.assertIn("--- Page 1 ---", destination.read_text(encoding="utf-8"))
+            self.assertGreater(exported.text_characters, 10)
+
+            _, second, duplicate = export_pdf_text(
+                root,
+                doi="10.1287/mnsc.2025.00819",
+            )
+            self.assertTrue(duplicate)
+            self.assertEqual(second.sha256, exported.sha256)
 
 
 if __name__ == "__main__":

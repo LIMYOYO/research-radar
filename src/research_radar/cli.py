@@ -15,6 +15,7 @@ from .access import (
     UOFT_EBSCO_URL,
     AccessError,
     doi_url,
+    export_pdf_text,
     import_pdf,
     inspect_pdf,
     libkey_url,
@@ -177,6 +178,12 @@ def build_parser() -> argparse.ArgumentParser:
         "path", help="Print the private local paper directory for a project."
     )
     path.add_argument("--project", type=Path, default=Path.cwd())
+
+    text_export = access_subparsers.add_parser(
+        "text", help="Export page-delimited text from an archived PDF for Codex."
+    )
+    text_export.add_argument("doi")
+    text_export.add_argument("--project", type=Path, default=Path.cwd())
 
     return parser
 
@@ -463,6 +470,17 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "access" and args.access_command == "path":
             destination = args.project.expanduser().resolve() / ".research-radar" / "papers"
             print(destination)
+            return 0
+
+        if args.command == "access" and args.access_command == "text":
+            destination, record, duplicate = export_pdf_text(
+                args.project,
+                doi=args.doi,
+            )
+            result = asdict(record)
+            result["absolute_text_file"] = str(destination)
+            result["duplicate"] = duplicate
+            print(json.dumps(result, indent=2, ensure_ascii=False, sort_keys=True))
             return 0
 
         if args.command == "access" and args.access_command == "import":

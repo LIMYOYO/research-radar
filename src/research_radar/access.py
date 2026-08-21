@@ -68,6 +68,18 @@ class AcquisitionRecord:
     license_url: str | None
 
 
+@dataclass(frozen=True)
+class TextExport:
+    schema_version: int
+    doi: str
+    pdf_file: str
+    text_file: str
+    pages: int
+    text_characters: int
+    sha256: str
+    analysis_policy: str
+
+
 def normalize_doi(value: str) -> str:
     """Extract and normalize a DOI from a DOI, URL, or surrounding text."""
     if not isinstance(value, str) or not value.strip():
@@ -245,3 +257,78 @@ def import_pdf(
             stream.write("\n")
 
     return destination, record, duplicate
+
+
+def _ledger_records(project_root: Path) -> list[dict[str, object]]:
+    ledger = project_root / ".research-radar" / "access-ledger.jsonl"
+    if not ledger.is_file():
+        return []
+    records: list[dict[str, object]] = []
+    for number, line in enumerate(ledger.read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise AccessError(f"Invalid access ledger JSON on line {number}: {exc}") from exc
+        if isinstance(value, dict):
+            records.append(value)
+    return records
+
+
+def export_pdf_text(
+    project: str | Path,
+    *,
+    doi: str,
+) -> tuple[Path, TextExport, bool]:
+    """Export page-delimited text from an archived PDF for local Codex reading."""
+    normalized_doi = normalize_doi(doi)
+    project_root = Path(project).expanduser().resolve()
+    matching = [
+        record
+        for record in _ledger_records(project_root)
+        if record.get("doi") == normalized_doi
+    ]
+    if not matching:
+        raise AccessError(
+            f"No archived access record for {normalized_doi}. Run `research-radar access import` first."
+        )
+    record = matching[-1]
+    if not record.get("codex_eligible"):
+        raise AccessError(
+            f"The archived record for {normalized_doi} is not eligible for Codex reading under its recorded policy."
+        )
+    relative_pdf = record.get("file")
+    if not isinstance(relative_pdf, str):
+        raise AccessError(f"The access record for {normalized_doi} has no valid file path.")
+    pdf_path = (project_root / relative_pdf).resolve()
+    try:
+        pdf_path.relative_to(project_root)
+    except ValueError as exc:
+        raise AccessError("The access ledger points outside the research project.") from exc
+    inspection = inspect_pdf(pdf_path)
+    reader = PdfReader(str(pdf_path))
+    page_text = [
+        f"\n\n--- Page {index} ---\n\n{page.extract_text() or ''}"
+        for index, page in enumerate(reader.pages, start=1)
+    ]
+    text = "".join(page_text).strip() + "\n"
+    if not text.strip():
+        raise AccessError(f"No extractable text found in {pdf_path}.")
+    text_dir = project_root / ".research-radar" / "texts"
+    text_dir.mkdir(parents=True, exist_ok=True)
+    destination = text_dir / f"{Path(paper_filename(normalized_doi)).stem}.txt"
+    duplicate = destination.is_file() and destination.read_text(encoding="utf-8") == text
+    if not duplicate:
+        destination.write_text(text, encoding="utf-8")
+    result = TextExport(
+        schema_version=1,
+        doi=normalized_doi,
+        pdf_file=pdf_path.relative_to(project_root).as_posix(),
+        text_file=destination.relative_to(project_root).as_posix(),
+        pages=inspection.pages,
+        text_characters=len(text),
+        sha256=inspection.sha256,
+        analysis_policy=str(record.get("analysis_policy") or "legacy"),
+    )
+    return destination, result, duplicate

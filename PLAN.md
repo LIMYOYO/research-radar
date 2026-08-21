@@ -1,8 +1,8 @@
 # Research Radar — Access-first Project Plan
 
-- Status: access MVP implementation
+- Status: local beta implemented; real-project calibration remains
 - Last updated: 2026-08-21
-- Current priority: prove reliable, legal local access to individual INFORMS PDFs before building discovery or project understanding.
+- Current priority: calibrate the complete local workflow on real research projects after passing the access gate and synthetic end-to-end test.
 
 ## 0. Access-first sequencing decision
 
@@ -18,7 +18,7 @@ Gate A0 is:
 > user to a permitted full-text source, acquire one article PDF locally, record
 > its provenance, and allow Codex reading only when the applicable terms permit.
 
-Gate A0 is complete only when:
+Gate A0 was completed on 2026-08-21. Its acceptance checks were:
 
 - one current subscription INFORMS article is acquired through U of T and is
   archived in `.research-radar/papers/` with its AI-use status;
@@ -356,37 +356,47 @@ Feedback is project-specific by default; cross-project learning requires an expl
 | Venue prestige dominates ranking | Missed relevant working papers | Venue is a configurable prior, never a hard filter. |
 | Automated reports become another inbox | Tool abandonment | Top-N limits, empty-day summaries, and feedback-based suppression. |
 
-## 8. Open decisions
+## 8. Remaining calibration decisions
 
-These questions should be answered during M0 rather than guessed in code:
+The implementation now has safe defaults. These choices should be calibrated
+with the first two real users rather than guessed from the synthetic fixture:
 
-1. Does “UTD papers” mean exactly UTD24, a broader business-journal set, or papers hosted by UT Dallas services?
-2. Should the default cadence be daily, weekdays only, or weekly with urgent competitor alerts?
-3. Which project should be the first private end-to-end fixture?
-4. Is `README.md` always available for project distillation, or should `RESEARCH_PROFILE.md` be the standard?
-5. Which paper types matter first: analytical OM/OR, empirical business, experiments, or all equally?
-6. Should reports live inside each research project or in a separate personal research hub?
-7. Which metadata providers have acceptable coverage and terms for the target fields?
-8. What level of full-text persistence is allowed under each institution's licenses?
-9. Should distillation use the local Codex session only, or eventually support a provider-neutral interface?
-10. How should collaborators share project profiles and feedback without sharing licensed PDFs?
+1. Does the shared venue preset need exactly UTD24 or a broader business-journal set?
+2. What precision-at-five target is realistic for analytical versus empirical projects?
+3. Which private project can supply the first 20-paper judged golden set?
+4. When should a `watch` item escalate between daily runs rather than wait for a weekly review?
+5. How should collaborators share project profiles and feedback without sharing licensed PDFs?
 
-## 9. Immediate next actions
+## 9. Calibration next actions
 
-Access-first priority order:
+The code-complete local beta now needs longitudinal evidence:
 
-1. Finish and test the Gate A0 local access CLI.
-2. Connect an authenticated browser to Codex.
-3. Run the subscription test DOI through U of T/LibKey.
-4. Download, import, and read the real PDF.
-5. Repeat with the open-access control DOI.
-6. Record the actual route and any EBSCO/LibKey friction.
-7. Add license-aware alternate-copy resolution for subscription records whose
-   provider terms prohibit AI use.
-8. Only after Gate A0 passes, choose the first research-project fixture and
-   begin profile, ingestion, and discovery work.
+1. Select the first private project and fill its explicit `RESEARCH_PROFILE.md`.
+2. Judge at least 20 candidate papers, including hard negatives and competitors.
+3. Run the daily task for one week, then tune queries, exclusions, and thresholds.
+4. Onboard a second researcher and record installation or interpretation friction.
 
-## 10. Documentation basis
+## 10. Implementation snapshot — 2026-08-21
+
+Implemented and tested:
+
+- Gate A0 on one subscription and one open-access INFORMS article;
+- local-test and strict analysis policies with provenance ledger;
+- page-delimited PDF text export for Codex;
+- research-profile, candidate, and briefing schemas;
+- TeX/BibTeX ingestion, DOI normalization, project fingerprinting, and SQLite state;
+- Crossref keyword discovery plus OpenAlex forward-citation, related-work, and keyword lanes;
+- cross-source identity merge, caching, retry, and adapter failure isolation;
+- explainable project-conditioned baseline ranking and evidence labels;
+- idempotent Markdown briefings and feedback-based suppression;
+- repository-scoped `$research-radar` skill;
+- a live synthetic-project run against both metadata providers.
+
+The remaining definition-of-done checks require elapsed use, not more scaffolding:
+two real researchers, four weeks of runs, and a reviewed 20-paper-per-project
+golden set. Those measurements must not be fabricated from the synthetic demo.
+
+## 11. Documentation basis
 
 The planned Codex integration follows current official guidance:
 
@@ -397,5 +407,5 @@ The planned Codex integration follows current official guidance:
 
 References:
 
-- [OpenAI — Build skills](https://learn.chatgpt.com/docs/build-skills)
+- [OpenAI — Build skills](https://learn.chatgpt.com/codex/skills)
 - [OpenAI — Scheduled tasks](https://learn.chatgpt.com/docs/automations)

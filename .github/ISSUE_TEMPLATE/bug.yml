@@ -1,0 +1,26 @@
+name: Bug report
+description: Report reproducible Research Radar behavior.
+title: "[bug] "
+labels: [bug]
+body:
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Observed behavior
+      description: Include the command, redacted output, and expected result.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Python version, operating system, and Research Radar commit.
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I removed manuscripts, PDFs, credentials, cookies, and private identifiers.
+          required: true

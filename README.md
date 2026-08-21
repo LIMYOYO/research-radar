@@ -6,11 +6,10 @@ Research Radar is intended for researchers who already have a paper in progress 
 
 The desired experience is closer to reading a personalized research newspaper than running a literature review from scratch.
 
-**Current implementation priority:** before discovery or project understanding,
-the project is building and validating the access channel from an individual
-INFORMS DOI to a local PDF and a Codex-readable private prototype. Source terms
-remain recorded so stricter deployments can enforce them. See
-[`docs/access-first.md`](docs/access-first.md).
+**Current status:** the local beta now covers the full vertical slice: U of T /
+INFORMS PDF intake, TeX and BibTeX ingestion, Crossref and OpenAlex discovery,
+explainable ranking, incremental Markdown briefings, feedback, local full-text
+export, and a repository-scoped Codex skill. See [Quick start](#quick-start).
 
 ## 中文概述
 
@@ -23,9 +22,8 @@ remain recorded so stricter deployments can enforce them. See
 
 系统获取元数据和合法可访问的全文，按照项目自己的分析框架 distill 新论文，并定期生成增量报告。它的任务不是替代研究者的 taste，而是让 taste 作用在更少、更重要的候选论文上。
 
-当前优先级已经调整为 access-first：先打通“一篇 INFORMS 论文的 DOI →
-U of T/LibKey/OpenAthens/EBSCO 合法访问 → PDF 保存到本地 → 检查许可是否允许 Codex
-读取”这条链路，再开始项目理解、自动搜索和日报功能。
+access-first 链路已经通过两篇真实 INFORMS 论文验证；本地 beta 也已能读取项目、
+发现与筛选论文、生成日报、记录反馈，并把归档 PDF 导出为带页码的 Codex 阅读文本。
 
 ## The problem
 
@@ -224,6 +222,8 @@ research-radar access import ~/Downloads/article.pdf \
   --project /path/to/my-research-project
 research-radar access verify \
   /path/to/my-research-project/.research-radar/papers/10.1287_mnsc.2025.00819.pdf
+research-radar access text 10.1287/mnsc.2025.00819 \
+  --project /path/to/my-research-project
 ```
 
 Installation and the complete manual test are documented in
@@ -235,15 +235,55 @@ The first real U of T/INFORMS validation is recorded in
 It confirms successful institutional PDF acquisition and also shows why access
 status and AI-use permission must be tracked separately.
 
-## Status
+## Quick start
 
-The repository is implementing Gate A0, the local access and PDF-ingestion
-vertical slice. The CLI and unit tests exist; the real U of T browser test still
-requires a connected, user-authenticated browser. See [PLAN.md](PLAN.md).
+Research Radar requires Python 3.9 or newer.
+
+```sh
+git clone <this-repository-url> research-radar
+cd research-radar
+python3 -m venv .venv
+.venv/bin/python -m pip install -e .
+
+.venv/bin/research-radar init /path/to/my-research-project
+# Fill in RESEARCH_PROFILE.md and add/keep paper.tex plus references.bib.
+.venv/bin/research-radar doctor --project /path/to/my-research-project
+.venv/bin/research-radar run --project /path/to/my-research-project
+```
+
+The briefing is written under
+`/path/to/my-research-project/.research-radar/reports/`. Record decisions so the
+next triage learns what is already known or off topic:
+
+```sh
+.venv/bin/research-radar feedback 'doi:10.xxxx/example' off-topic \
+  --project /path/to/my-research-project \
+  --note 'Lexically similar, but no platform decision or strategic mechanism.'
+```
+
+For Codex, invoke `$research-radar` from the research folder. The checked-in
+skill lives at [`.agents/skills/research-radar`](.agents/skills/research-radar).
+Daily desktop setup and the tested task prompt are in
+[`docs/automation.md`](docs/automation.md).
+
+## What the beta does and does not do
+
+The current ranking/distillation layer is an explainable baseline. The CLI only
+states what indexed metadata and abstracts support; the Codex skill deepens the
+highest-signal entries against the project framework and upgrades evidence to
+`full-text` only after a local PDF is actually read. It does not automatically
+edit the manuscript or bibliography, automate institutional credentials, or
+bulk-download subscription content.
+
+Run the complete test suite with:
+
+```sh
+.venv/bin/python -m unittest discover -s tests -v
+```
 
 ## References
 
-- [OpenAI: Build skills](https://learn.chatgpt.com/docs/build-skills)
+- [OpenAI: Build skills](https://learn.chatgpt.com/codex/skills)
 - [OpenAI: Scheduled tasks](https://learn.chatgpt.com/docs/automations)
 - [INFORMS institutional journal access](https://www.informs.org/Publications/Journal-Subscriptions)
 - [University of Toronto electronic resource access](https://library.utoronto.ca/use/how-to/access-electronic-resources)

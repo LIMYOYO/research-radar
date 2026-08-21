@@ -37,8 +37,7 @@ from .state import (
 )
 
 
-PACKAGE_ROOT = Path(__file__).resolve().parents[2]
-TEMPLATE_ROOT = PACKAGE_ROOT / "templates"
+TEMPLATE_ROOT = Path(__file__).resolve().parent / "templates"
 
 
 DEFAULT_CONFIG = """schema_version: 1

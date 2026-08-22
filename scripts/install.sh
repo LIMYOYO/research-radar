@@ -54,6 +54,7 @@ mkdir -p "$DATA_DIR" "$BIN_DIR" "$CODEX_ROOT/skills"
 if [ ! -x "$VENV_DIR/bin/python" ]; then
     "$PYTHON_BIN" -m venv "$VENV_DIR"
 fi
+"$VENV_DIR/bin/python" -m pip install --upgrade pip
 "$VENV_DIR/bin/python" -m pip install --upgrade "$REPO_ROOT"
 
 SKILL_SOURCE=$REPO_ROOT/.agents/skills/research-radar

@@ -241,6 +241,7 @@ def save_discovery(
     root = str(Path(project).expanduser().resolve())
     now = datetime.now(timezone.utc).isoformat()
     new_count = 0
+    new_identities: list[str] = []
     updated_identities: list[str] = []
     material_fields = {
         "doi",
@@ -281,6 +282,7 @@ def save_discovery(
             ).fetchone()
             if not previous:
                 new_count += 1
+                new_identities.append(identity)
             else:
                 try:
                     old_payload = json.loads(previous["payload_json"])
@@ -289,9 +291,15 @@ def save_discovery(
                 old_material = {
                     key: old_payload.get(key) for key in material_fields
                 }
-                new_material = {
-                    key: candidate.get(key) for key in material_fields
-                }
+                # Candidate dataclasses expose tuples while JSON restores lists.
+                # Compare their persisted representation to avoid false updates.
+                new_material = json.loads(
+                    json.dumps(
+                        {key: candidate.get(key) for key in material_fields},
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    )
+                )
                 if old_material != new_material:
                     updated_identities.append(identity)
             connection.execute(
@@ -314,6 +322,10 @@ def save_discovery(
         stored_manifest["new_candidate_count"] = new_count + len(updated_identities)
         stored_manifest["newly_seen_count"] = new_count
         stored_manifest["materially_updated_count"] = len(updated_identities)
+        stored_manifest["changed_candidate_identities"] = [
+            *new_identities,
+            *updated_identities,
+        ]
         connection.execute(
             "UPDATE runs SET manifest_json = ? WHERE id = ?",
             (
@@ -322,6 +334,29 @@ def save_discovery(
             ),
         )
     return run_id, new_count, tuple(updated_identities)
+
+
+def latest_discovery_manifest(project: str | Path) -> dict[str, object] | None:
+    """Return the latest persisted discovery manifest for workflow orchestration."""
+    root = str(Path(project).expanduser().resolve())
+    with connect(root) as connection:
+        row = connection.execute(
+            """
+            SELECT manifest_json
+            FROM runs
+            WHERE project_root = ? AND run_type = 'discovery'
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (root,),
+        ).fetchone()
+    if row is None:
+        return None
+    try:
+        manifest = json.loads(row["manifest_json"])
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return manifest if isinstance(manifest, dict) else None
 
 
 def load_candidates(project: str | Path) -> list[dict[str, object]]:

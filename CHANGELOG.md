@@ -12,6 +12,14 @@
   candidate metadata into the public repository.
 - Added material-candidate update detection, per-provider successful search
   watermarks, source-window audit output, and bounded `Retry-After` handling.
+- Added a persisted latest-change manifest and machine-readable `queue` command
+  so the skill can select and complete one paper end to end without parsing
+  report prose.
+- Bounded live discovery with progress events, a 120-second wall-clock budget,
+  conservative query caps, provider circuit breaking after persistent rate
+  limits, and no retries for permanent HTTP failures.
+- Stopped inferring that every forward citation `extends` a seed; citation edges
+  now require textual or deep-reading evidence before that relationship label.
 
 ## 0.2.0 — 2026-08-21
 

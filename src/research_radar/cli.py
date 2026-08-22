@@ -39,6 +39,7 @@ from .resolution import resolve_access
 from .state import (
     FEEDBACK_LABELS,
     last_successful_search_to_by_adapter,
+    latest_discovery_manifest,
     latest_distillations,
     latest_feedback,
     load_candidates,
@@ -58,9 +59,11 @@ DEFAULT_CONFIG = """schema_version: 1
 cadence: on-demand
 top_n: 5
 lookback_days: 14
-max_seed_resolution: 12
-max_graph_seeds: 8
-max_watch_queries: 8
+max_run_seconds: 120
+max_keyword_queries: 6
+max_seed_resolution: 6
+max_graph_seeds: 4
+max_watch_queries: 4
 sources:
   - crossref
   - openalex
@@ -130,6 +133,19 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--to", dest="search_to")
     run.add_argument("--limit-per-lane", type=int, default=20)
     run.add_argument("--top-n", type=int)
+
+    queue = subparsers.add_parser(
+        "queue",
+        help="Print a ranked, machine-readable action queue from stored candidates.",
+    )
+    queue.add_argument("--project", type=Path, default=Path.cwd())
+    queue.add_argument("--limit", type=int, default=5)
+    queue.add_argument(
+        "--scope",
+        choices=("latest", "all"),
+        default="latest",
+        help="Use only the latest run's new/updated papers, or all stored papers.",
+    )
 
     feedback = subparsers.add_parser(
         "feedback", help="Record a researcher decision for one candidate."
@@ -407,6 +423,10 @@ def _open_or_print(url: str, print_only: bool) -> int:
     return 0
 
 
+def _progress(message: str) -> None:
+    print(f"[research-radar] {message}", file=sys.stderr, flush=True)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -461,6 +481,7 @@ def main(argv: list[str] | None = None) -> int:
                     else last_successful_search_to_by_adapter(args.project)
                 ),
                 limit_per_lane=args.limit_per_lane,
+                progress=_progress,
             )
             candidate_dicts = [candidate.to_dict() for candidate in outcome.candidates]
             manifest = {
@@ -516,6 +537,7 @@ def main(argv: list[str] | None = None) -> int:
                     else last_successful_search_to_by_adapter(args.project)
                 ),
                 limit_per_lane=args.limit_per_lane,
+                progress=_progress,
             )
             candidate_dicts = [candidate.to_dict() for candidate in outcome.candidates]
             manifest = {
@@ -590,6 +612,121 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 json.dumps(
                     {"identity": args.identity, "label": args.label, "saved": True},
+                    indent=2,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
+            return 0
+
+        if args.command == "queue":
+            if args.limit < 1:
+                raise ValueError("--limit must be at least 1.")
+            root = args.project.expanduser().resolve()
+            snapshot = ingest_project(root)
+            require_profile_ready(snapshot.profile)
+            stored = {
+                candidate.identity: candidate
+                for candidate in (
+                    Candidate.from_dict(item) for item in load_candidates(root)
+                )
+            }
+            manifest = latest_discovery_manifest(root)
+            if args.scope == "latest":
+                changed = (
+                    manifest.get("changed_candidate_identities", [])
+                    if manifest is not None
+                    else []
+                )
+                identities = [
+                    str(identity)
+                    for identity in changed
+                    if str(identity) in stored
+                ]
+                candidates = tuple(stored[identity] for identity in identities)
+            else:
+                candidates = tuple(stored.values())
+            distillations = latest_distillations(root)
+            ranked = rank_candidates(
+                snapshot,
+                candidates,
+                feedback=latest_feedback(root),
+            )
+            ranked = apply_distillations(ranked, distillations)
+            visible = [
+                item
+                for item in ranked
+                if not item.suppressed and item.recommended_action != "weak"
+            ][: args.limit]
+            items = []
+            for rank, item in enumerate(visible, start=1):
+                candidate = item.candidate
+                prior_distillation = distillations.get(candidate.identity)
+                if candidate.local_access_status in {"pdf", "text"}:
+                    prior_level = (
+                        str(prior_distillation.get("evidence_level", ""))
+                        if isinstance(prior_distillation, dict)
+                        else ""
+                    )
+                    next_step = (
+                        "review-distillation"
+                        if prior_level == "full-text"
+                        else "deep-distill"
+                    )
+                elif candidate.doi:
+                    next_step = "acquire"
+                elif candidate.abstract:
+                    next_step = "abstract-distill"
+                else:
+                    next_step = "metadata-review"
+                commands: dict[str, list[str]] = {
+                    "distill_context": [
+                        "research-radar",
+                        "distill",
+                        "context",
+                        candidate.identity,
+                        "--project",
+                        str(root),
+                    ],
+                    "brief": ["research-radar", "brief", "--project", str(root)],
+                }
+                if candidate.doi:
+                    commands["acquire"] = [
+                        "research-radar",
+                        "access",
+                        "acquire",
+                        candidate.doi,
+                        "--project",
+                        str(root),
+                    ]
+                items.append(
+                    {
+                        "rank": rank,
+                        "identity": candidate.identity,
+                        "doi": candidate.doi,
+                        "title": candidate.title,
+                        "score": item.score,
+                        "recommended_action": item.recommended_action,
+                        "relationship": item.relationship,
+                        "why_it_matters": item.why_it_matters,
+                        "provider_access_status": candidate.access_status,
+                        "local_access_status": candidate.local_access_status,
+                        "evidence_level": candidate.evidence_level,
+                        "has_distillation": prior_distillation is not None,
+                        "next_step": next_step,
+                        "commands": commands,
+                    }
+                )
+            print(
+                json.dumps(
+                    {
+                        "project": str(root),
+                        "scope": args.scope,
+                        "latest_run_available": manifest is not None,
+                        "candidate_count": len(candidates),
+                        "shown_count": len(items),
+                        "items": items,
+                    },
                     indent=2,
                     ensure_ascii=False,
                     sort_keys=True,

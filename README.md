@@ -270,8 +270,15 @@ python3 -m venv .venv
 # A normal software README is not treated as a completed research profile.
 .venv/bin/research-radar doctor --project /path/to/my-research-project
 .venv/bin/research-radar run --project /path/to/my-research-project
+.venv/bin/research-radar queue --scope latest --limit 3 \
+  --project /path/to/my-research-project
 .venv/bin/research-radar weekly --project /path/to/my-research-project
 ```
+
+`run` persists exactly which candidates were new or materially updated;
+`queue --scope latest` ranks only that delta and emits argv-style next commands
+for one-paper acquisition and distillation. This is the interface used by the
+Codex skill, so it does not have to infer workflow state from report prose.
 
 The briefing is written under
 `/path/to/my-research-project/.research-radar/reports/`. Record decisions so the

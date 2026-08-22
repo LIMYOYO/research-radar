@@ -189,7 +189,10 @@ def _relationship(candidate: Candidate, matched: set[str]) -> str:
     corpus = f"{candidate.title} {candidate.abstract or ''}".lower()
     if any(word in corpus for word in ("contradict", "counterexample", "fails to")):
         return "contradicts"
-    if any("forward-citations" in lane for lane in candidate.discovered_by):
+    if any(
+        phrase in corpus
+        for phrase in ("extends ", "generalizes ", "builds on ", "builds upon ")
+    ):
         return "extends"
     if any(word in corpus for word in ("estimator", "algorithm", "method", "identification")):
         return "method-lead"
@@ -197,6 +200,10 @@ def _relationship(candidate: Candidate, matched: set[str]) -> str:
         return "competes"
     if any("related" in lane for lane in candidate.discovered_by):
         return "background"
+    # A citation edge proves chronology and linkage, not whether a paper
+    # supports, extends, or competes with the seed.
+    if any("forward-citations" in lane for lane in candidate.discovered_by):
+        return "unknown"
     return "unknown"
 
 

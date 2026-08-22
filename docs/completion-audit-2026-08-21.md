@@ -20,7 +20,7 @@ Run from the repository root:
 
 Observed on 2026-08-21:
 
-- 61 tests passed;
+- 64 tests passed;
 - all source and test modules compiled;
 - the repository skill validated;
 - a version 0.2.0 wheel installed and initialized a project in a fresh Python

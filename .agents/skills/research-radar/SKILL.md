@@ -26,21 +26,54 @@ research-radar profile --project /absolute/project/path
 
 If the project has not been initialized, run `research-radar init /absolute/project/path`, ask the researcher to replace the generated prompts with substantive project content, and stop before interpreting placeholder text.
 
-## Choose the mode
+## Run the normal end-to-end workflow
 
-- For a normal manual update, run `research-radar run --project /absolute/project/path`. Respect a user-supplied date window; otherwise use the configured lookback.
-- For a synthesis across prior invocations, run `research-radar weekly --project /absolute/project/path`.
-- For offline re-triage after feedback, run `research-radar brief --project /absolute/project/path`.
-- For a high-signal DOI without local full text, first run `research-radar access acquire DOI --project /absolute/project/path`. It may automatically archive and export one verified public/OA PDF. Never loop this command over an unreviewed candidate set.
-- If `access acquire` returns `authentication-required`, follow [references/browser-access.md](references/browser-access.md) with the connected authorized browser when available.
-- If the browser asks for institutional login or Duo, leave the tab as a user handoff and finish the metadata report. Do not request, inspect, enter, or store credentials, Duo responses, cookies, or tokens.
-- For a requested paper already downloaded by the user, import it with `research-radar access import` and the correct DOI/route before reading it.
+For a normal manual update, execute this sequence rather than stopping after
+discovery:
+
+1. Run `research-radar doctor --project /absolute/project/path`. Stop before
+   network work if `ready` is false and explain the failed checks.
+2. Run `research-radar run --project /absolute/project/path`. Respect a
+   user-supplied date window; otherwise let the CLI use each provider's last
+   successful watermark. Exit status 1 is a usable partial run when stdout is
+   valid JSON with a report path; surface its adapter errors and continue.
+3. Run `research-radar queue --scope latest --limit 3 --project
+   /absolute/project/path`. This is the authoritative action queue for papers
+   that are new or materially updated in the latest run. Do not substitute the
+   full historical pool. If it is empty, read the report, state that no new
+   high-signal paper survived triage, and stop successfully.
+4. Select the first queue item. Attempt access for at most this one paper per
+   invocation unless the researcher explicitly selects another. Follow the
+   item's `next_step` and argv-style `commands`; do not reconstruct a DOI or
+   shell command from prose.
+5. If `next_step` is `acquire`, run its `acquire` command. An `acquired` or
+   `existing` result must include a verified local PDF and exported text. If it
+   returns `authentication-required`, follow
+   [references/browser-access.md](references/browser-access.md) using the
+   connected authorized browser when available, then import and export exactly
+   that paper. If institutional sign-in, Duo, CAPTCHA, or another interactive
+   step appears, leave the page for the researcher; do not request, inspect,
+   enter, or store credentials, responses, cookies, or tokens.
+6. Run the selected item's `distill_context` command. Read
+   [references/distillation.md](references/distillation.md), use the strongest
+   evidence actually present, create one schema-valid JSON distillation under
+   the private `.research-radar/` directory, import it, and run the queued
+   `brief` command so the deep card replaces the shallow card.
+7. Return the report path, the selected paper and why it matters, evidence
+   actually read, access result, distillation result, and every partial-provider
+   warning. Never claim a full-text read when the access ledger or distillation
+   import does not prove it.
+
+For a requested paper already downloaded by the user, import it with
+`research-radar access import` and the correct DOI/route before reading it. For
+a synthesis across prior invocations, run `research-radar weekly`; for offline
+re-triage after feedback, run `research-radar brief`.
 
 Read the generated Markdown report and focus on `read-now` and `watch` candidates. Do not inflate the result to a fixed count when the report has no high-signal change.
 
 ## Deepen the highest-signal entries
 
-For each paper worth presenting, compare it directly with the project's research question, primitives, mechanism, method, assumptions, and contribution delta. Read [references/distillation.md](references/distillation.md) before producing a deep distillation or competitor alert.
+For the selected paper, compare it directly with the project's research question, primitives, mechanism, method, assumptions, and contribution delta. Read [references/distillation.md](references/distillation.md) before producing a deep distillation or competitor alert.
 
 Build the evidence packet before deep reading:
 

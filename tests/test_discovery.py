@@ -12,7 +12,9 @@ from unittest.mock import patch
 
 from research_radar.discovery import (
     CrossrefAdapter,
+    DiscoveryBudgetError,
     DiscoveryError,
+    DiscoveryRateLimitError,
     HttpJsonClient,
     candidate_from_crossref,
     candidate_from_openalex,
@@ -112,6 +114,13 @@ class FakeClient:
 
 
 class DiscoveryTests(unittest.TestCase):
+    def test_http_client_stops_before_request_after_total_budget(self) -> None:
+        client = HttpJsonClient(deadline_monotonic=0.0)
+        with patch("research_radar.discovery.urlopen") as request:
+            with self.assertRaises(DiscoveryBudgetError):
+                client.get_json("https://api.openalex.org/works")
+        request.assert_not_called()
+
     def test_http_client_honors_bounded_retry_after_for_rate_limits(self) -> None:
         headers = Message()
         headers["Retry-After"] = "3"
@@ -142,6 +151,25 @@ class DiscoveryTests(unittest.TestCase):
 
         self.assertEqual(payload, {"results": []})
         sleep.assert_called_once_with(3.0)
+
+    def test_http_client_does_not_retry_nontransient_404(self) -> None:
+        not_found = HTTPError(
+            "https://api.semanticscholar.org/paper/missing",
+            404,
+            "not found",
+            Message(),
+            io.BytesIO(),
+        )
+        client = HttpJsonClient(retries=2)
+        with patch(
+            "research_radar.discovery.urlopen",
+            side_effect=not_found,
+        ) as request, patch("research_radar.discovery.time.sleep") as sleep:
+            with self.assertRaises(DiscoveryError):
+                client.get_json("https://api.semanticscholar.org/paper/missing")
+
+        self.assertEqual(request.call_count, 1)
+        sleep.assert_not_called()
 
     def test_crossref_and_openalex_normalize_to_same_identity(self) -> None:
         crossref = candidate_from_crossref(crossref_item(), "crossref:keywords")
@@ -273,6 +301,32 @@ class DiscoveryTests(unittest.TestCase):
         self.assertTrue(
             any("from_publication_date%3A2026-08-10" in url for url in client.urls)
         )
+
+    def test_rate_limit_opens_provider_circuit_but_other_sources_continue(self) -> None:
+        snapshot = ingest_project(FIXTURE)
+
+        class RateLimitedOpenAlex(FakeClient):
+            def get_json(self, url: str) -> dict[str, Any]:
+                if "api.openalex.org" in url:
+                    self.urls.append(url)
+                    raise DiscoveryRateLimitError("simulated OpenAlex 429")
+                return super().get_json(url)
+
+        client = RateLimitedOpenAlex()
+        outcome = discover(
+            snapshot,
+            search_from="2026-08-01",
+            search_to="2026-08-21",
+            client=client,
+            limit_per_lane=2,
+        )
+
+        self.assertEqual(
+            sum("api.openalex.org" in url for url in client.urls),
+            1,
+        )
+        self.assertTrue(outcome.adapter_status["openalex"].startswith("partial"))
+        self.assertTrue(outcome.adapter_status["semanticscholar"].startswith("ok"))
 
     def test_one_adapter_failure_is_nonfatal(self) -> None:
         snapshot = ingest_project(FIXTURE)

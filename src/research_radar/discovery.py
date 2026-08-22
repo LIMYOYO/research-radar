@@ -12,7 +12,7 @@ from difflib import SequenceMatcher
 from dataclasses import asdict, dataclass, replace
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Any, Iterable, Protocol
+from typing import Any, Callable, Iterable, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
@@ -30,6 +30,14 @@ USER_AGENT = "research-radar/0.2 (https://github.com/research-radar/research-rad
 
 class DiscoveryError(RuntimeError):
     """Raised for a failed discovery source request."""
+
+
+class DiscoveryRateLimitError(DiscoveryError):
+    """Raised after a provider exhausts its bounded rate-limit retry."""
+
+
+class DiscoveryBudgetError(DiscoveryError):
+    """Raised when the configured wall-clock discovery budget is exhausted."""
 
 
 class JsonClient(Protocol):
@@ -88,13 +96,15 @@ class HttpJsonClient:
         *,
         cache_dir: Path | None = None,
         timeout: float = 20.0,
-        retries: int = 2,
+        retries: int = 1,
         cache_ttl_seconds: int = 86400,
+        deadline_monotonic: float | None = None,
     ) -> None:
         self.cache_dir = cache_dir
         self.timeout = timeout
         self.retries = retries
         self.cache_ttl_seconds = cache_ttl_seconds
+        self.deadline_monotonic = deadline_monotonic
         if cache_dir:
             cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -113,13 +123,21 @@ class HttpJsonClient:
 
         error: Exception | None = None
         for attempt in range(self.retries + 1):
+            request_timeout = self.timeout
+            if self.deadline_monotonic is not None:
+                remaining = self.deadline_monotonic - time.monotonic()
+                if remaining <= 0:
+                    raise DiscoveryBudgetError(
+                        "Discovery stopped at the configured wall-clock budget."
+                    )
+                request_timeout = min(request_timeout, max(0.1, remaining))
             try:
                 headers = {"Accept": "application/json", "User-Agent": USER_AGENT}
                 api_key = os.environ.get("SEMANTIC_SCHOLAR_API_KEY")
                 if api_key and url.startswith(SEMANTIC_SCHOLAR_API):
                     headers["x-api-key"] = api_key
                 request = Request(url, headers=headers)
-                with urlopen(request, timeout=self.timeout) as response:
+                with urlopen(request, timeout=request_timeout) as response:
                     payload = json.loads(response.read().decode("utf-8"))
                 if cache_path:
                     cache_path.write_text(
@@ -129,7 +147,8 @@ class HttpJsonClient:
                 return payload
             except HTTPError as exc:
                 error = exc
-                if attempt < self.retries:
+                retryable = exc.code in {429, 500, 502, 503, 504}
+                if attempt < self.retries and retryable:
                     retry_after = exc.headers.get("Retry-After") if exc.headers else None
                     try:
                         requested_delay = float(retry_after) if retry_after else 0.0
@@ -140,11 +159,33 @@ class HttpJsonClient:
                         if exc.code in {429, 503}
                         else 0.5 * (2**attempt)
                     )
+                    if self.deadline_monotonic is not None:
+                        remaining = self.deadline_monotonic - time.monotonic()
+                        if remaining <= 0:
+                            raise DiscoveryBudgetError(
+                                "Discovery stopped at the configured wall-clock budget."
+                            ) from exc
+                        delay = min(delay, remaining)
                     time.sleep(delay)
+                else:
+                    break
             except (URLError, TimeoutError, json.JSONDecodeError) as exc:
                 error = exc
                 if attempt < self.retries:
-                    time.sleep(0.5 * (2**attempt))
+                    delay = 0.5 * (2**attempt)
+                    if self.deadline_monotonic is not None:
+                        remaining = self.deadline_monotonic - time.monotonic()
+                        if remaining <= 0:
+                            raise DiscoveryBudgetError(
+                                "Discovery stopped at the configured wall-clock budget."
+                            ) from exc
+                        delay = min(delay, remaining)
+                    time.sleep(delay)
+        if isinstance(error, HTTPError) and error.code in {429, 503}:
+            raise DiscoveryRateLimitError(
+                f"Provider rate limit persisted after {self.retries + 1} attempt(s): "
+                f"{url}: HTTP {error.code}"
+            ) from error
         raise DiscoveryError(f"Request failed after {self.retries + 1} attempt(s): {url}: {error}")
 
 
@@ -718,6 +759,7 @@ def discover(
     search_from_by_source: dict[str, str] | None = None,
     client: JsonClient | None = None,
     limit_per_lane: int = 20,
+    progress: Callable[[str], None] | None = None,
 ) -> DiscoveryOutcome:
     require_profile_ready(snapshot.profile)
     root = Path(snapshot.project_root)
@@ -727,8 +769,12 @@ def discover(
     default_search_from = (
         today - timedelta(days=int(config.get("lookback_days", 14)))
     ).isoformat()
+    max_run_seconds = max(15, int(config.get("max_run_seconds", 120)))
     if client is None:
-        client = HttpJsonClient(cache_dir=root / ".research-radar" / "cache")
+        client = HttpJsonClient(
+            cache_dir=root / ".research-radar" / "cache",
+            deadline_monotonic=time.monotonic() + max_run_seconds,
+        )
 
     sources = set(config.get("sources", []))
     prior_windows = search_from_by_source or {}
@@ -744,7 +790,9 @@ def discover(
         default=search_from or default_search_from,
     )
     lanes = set(config.get("discovery_lanes", []))
-    queries = profile_queries(snapshot, config)
+    all_queries = profile_queries(snapshot, config)
+    keyword_limit = max(0, int(config.get("max_keyword_queries", 6)))
+    queries = all_queries[:keyword_limit]
     author_queries = profile_watch_items(snapshot, config, "authors")
     venue_queries = profile_watch_items(snapshot, config, "venues")
     found: list[Candidate] = []
@@ -754,9 +802,15 @@ def discover(
     cited_seeds = [seed for seed in snapshot.seeds if seed.cited_in_manuscript]
     active_seeds = cited_seeds or list(snapshot.seeds)
     effective_seeds = list(active_seeds)
+    budget_exhausted = False
+
+    def emit(message: str) -> None:
+        if progress is not None:
+            progress(message)
 
     if "crossref" in sources:
         adapter = CrossrefAdapter(client)
+        emit("crossref: starting")
         source_from = source_windows[adapter.name]["from"]
         resolved_count = 0
         resolution_attempts = 0
@@ -806,9 +860,16 @@ def discover(
         except Exception as exc:
             statuses[adapter.name] = "failed"
             errors.append(f"{adapter.name}: {exc}")
+            budget_exhausted = isinstance(exc, DiscoveryBudgetError)
+        emit(f"crossref: {statuses[adapter.name]}")
 
     if "openalex" in sources:
         adapter = OpenAlexAdapter(client)
+        if budget_exhausted:
+            statuses[adapter.name] = "skipped (run budget exhausted)"
+            emit(f"openalex: {statuses[adapter.name]}")
+        else:
+            emit("openalex: starting")
         source_from = source_windows[adapter.name]["from"]
         resolved = 0
         openalex_failures = 0
@@ -824,12 +885,13 @@ def discover(
         ]
         graph_limit = max(0, int(config.get("max_graph_seeds", 8)))
         graph_seeds = list(
-            dict.fromkeys(seed.identity for seed in [*enriched, *direct])
+            dict.fromkeys(seed.identity for seed in [*direct, *enriched])
         )[:graph_limit]
         graph_seed_by_identity = {
-            seed.identity: seed for seed in [*enriched, *direct]
+            seed.identity: seed for seed in [*direct, *enriched]
         }
-        for identity in graph_seeds:
+        stop_openalex = budget_exhausted
+        for identity in graph_seeds if not stop_openalex else []:
             seed = graph_seed_by_identity[identity]
             if not seed.doi:
                 continue
@@ -853,22 +915,37 @@ def discover(
             except Exception as exc:
                 openalex_failures += 1
                 errors.append(f"{adapter.name} seed {seed.citation_key}: {exc}")
-        if "keywords" in lanes:
+                if isinstance(exc, (DiscoveryRateLimitError, DiscoveryBudgetError)):
+                    stop_openalex = True
+                    budget_exhausted = isinstance(exc, DiscoveryBudgetError)
+                    break
+        if "keywords" in lanes and not stop_openalex:
             for query in queries:
                 try:
                     found.extend(adapter.search(query, from_date=source_from, until_date=search_to, limit=limit_per_lane))
                 except Exception as exc:
                     openalex_failures += 1
                     errors.append(f"{adapter.name} query {query!r}: {exc}")
-        if openalex_failures:
-            statuses[adapter.name] = (
-                f"partial ({resolved} seed(s) resolved; {openalex_failures} failure(s))"
-            )
-        else:
-            statuses[adapter.name] = f"ok ({resolved} seed(s) resolved)"
+                    if isinstance(exc, (DiscoveryRateLimitError, DiscoveryBudgetError)):
+                        stop_openalex = True
+                        budget_exhausted = isinstance(exc, DiscoveryBudgetError)
+                        break
+        if not budget_exhausted or adapter.name not in statuses:
+            if openalex_failures:
+                statuses[adapter.name] = (
+                    f"partial ({resolved} seed(s) resolved; {openalex_failures} failure(s))"
+                )
+            else:
+                statuses[adapter.name] = f"ok ({resolved} seed(s) resolved)"
+        emit(f"openalex: {statuses[adapter.name]}")
 
     if "semanticscholar" in sources:
         adapter = SemanticScholarAdapter(client)
+        if budget_exhausted:
+            statuses[adapter.name] = "skipped (run budget exhausted)"
+            emit(f"semanticscholar: {statuses[adapter.name]}")
+        else:
+            emit("semanticscholar: starting")
         source_from = source_windows[adapter.name]["from"]
         failures = 0
         queried = 0
@@ -876,7 +953,8 @@ def discover(
         graph_seeds = [
             seed for seed in effective_seeds if seed.doi or seed.preprint_id
         ][:graph_limit]
-        for seed in graph_seeds:
+        stop_semantic_scholar = budget_exhausted
+        for seed in graph_seeds if not stop_semantic_scholar else []:
             try:
                 if "forward-citations" in lanes:
                     found.extend(
@@ -894,13 +972,19 @@ def discover(
             except Exception as exc:
                 failures += 1
                 errors.append(f"{adapter.name} seed {seed.citation_key}: {exc}")
-        if failures or adapter.coverage_notes:
-            statuses[adapter.name] = (
-                f"partial ({queried} seed(s) queried; {failures} failure(s); "
-                f"{len(adapter.coverage_notes)} coverage gap(s))"
-            )
-        else:
-            statuses[adapter.name] = f"ok ({queried} seed(s) queried)"
+                if isinstance(exc, (DiscoveryRateLimitError, DiscoveryBudgetError)):
+                    stop_semantic_scholar = True
+                    budget_exhausted = isinstance(exc, DiscoveryBudgetError)
+                    break
+        if not budget_exhausted or adapter.name not in statuses:
+            if failures or adapter.coverage_notes:
+                statuses[adapter.name] = (
+                    f"partial ({queried} seed(s) queried; {failures} failure(s); "
+                    f"{len(adapter.coverage_notes)} coverage gap(s))"
+                )
+            else:
+                statuses[adapter.name] = f"ok ({queried} seed(s) queried)"
+        emit(f"semanticscholar: {statuses[adapter.name]}")
 
     seed_identities = {seed.identity for seed in snapshot.seeds} | {
         seed.identity for seed in effective_seeds

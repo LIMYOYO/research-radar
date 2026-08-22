@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 
+from research_radar.cli import main
 from research_radar.discovery import Candidate
 from research_radar.project import ingest_project
 from research_radar.ranking import rank_candidates
@@ -11,6 +15,7 @@ from research_radar.reporting import write_briefing, write_weekly
 from research_radar.state import (
     last_successful_search_to,
     last_successful_search_to_by_adapter,
+    latest_discovery_manifest,
     latest_feedback,
     load_candidate_records,
     save_discovery,
@@ -166,7 +171,7 @@ class RankingAndReportingTests(unittest.TestCase):
 
         self.assertEqual(ranked[0].candidate.identity, relevant.identity)
         self.assertGreater(ranked[0].score, ranked[1].score)
-        self.assertEqual(ranked[0].relationship, "extends")
+        self.assertEqual(ranked[0].relationship, "competes")
         self.assertIn("novelty", ranked[0].scores)
         self.assertIn("priority_risk", ranked[0].scores)
         self.assertTrue(ranked[1].suppressed)
@@ -309,8 +314,8 @@ class RankingAndReportingTests(unittest.TestCase):
             save_snapshot(snapshot)
             initial = candidate(
                 "doi:10.5555/update",
-                "Marketplace Learning with Strategic Signals",
-                "A short abstract.",
+                "Marketplace Learning Under Strategic Review Manipulation",
+                "A platform learns product quality while strategic sellers manipulate review signals.",
             )
             manifest = {"search_from": "2026-08-01", "search_to": "2026-08-21"}
             _, new_count, updates = save_discovery(
@@ -322,7 +327,7 @@ class RankingAndReportingTests(unittest.TestCase):
             enriched = Candidate.from_dict(
                 {
                     **initial.to_dict(),
-                    "abstract": "A materially richer abstract with a new result.",
+                    "abstract": "A platform learns product quality while strategic sellers manipulate review signals and disclosure.",
                     "access_status": "full-text",
                 }
             )
@@ -337,6 +342,34 @@ class RankingAndReportingTests(unittest.TestCase):
             self.assertFalse(updates)
             self.assertEqual(second_new_count, 0)
             self.assertEqual(second_updates, (initial.identity,))
+            stored_manifest = latest_discovery_manifest(root)
+            self.assertIsNotNone(stored_manifest)
+            assert stored_manifest is not None
+            self.assertEqual(stored_manifest["new_candidate_count"], 1)
+            self.assertEqual(stored_manifest["materially_updated_count"], 1)
+            self.assertEqual(
+                stored_manifest["changed_candidate_identities"],
+                [initial.identity],
+            )
+
+            output = StringIO()
+            with redirect_stdout(output):
+                exit_code = main(["queue", "--project", str(root)])
+            queued = json.loads(output.getvalue())
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(queued["items"][0]["identity"], initial.identity)
+            self.assertEqual(queued["items"][0]["next_step"], "acquire")
+
+            save_discovery(
+                root,
+                candidates=[enriched.to_dict()],
+                manifest=manifest,
+                status="success",
+            )
+            no_change_output = StringIO()
+            with redirect_stdout(no_change_output):
+                main(["queue", "--project", str(root)])
+            self.assertEqual(json.loads(no_change_output.getvalue())["items"], [])
 
 
 if __name__ == "__main__":

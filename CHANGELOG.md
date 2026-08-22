@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1 — 2026-08-22
+
+- Added a standard `research-radar --version` interface and regression test.
+- Corrected public beta version references in the README and completion audit.
+
 ## 0.3.0 — 2026-08-22
 
 - Separated provider-reported availability from verified local PDF/text state

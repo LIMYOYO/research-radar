@@ -6,7 +6,7 @@ Research Radar is intended for researchers who already have a paper in progress 
 
 The desired experience is closer to reading a personalized research newspaper than running a literature review from scratch.
 
-**Current status:** version 0.2.0 covers the local vertical slice: U of T /
+**Current status:** version 0.3.1 covers the local vertical slice: U of T /
 INFORMS PDF intake, TeX and BibTeX ingestion, Crossref, OpenAlex, and Semantic
 Scholar discovery, explainable ranking, persisted deep distillation,
 incremental on-demand and weekly briefings, feedback, local full-text export, and a

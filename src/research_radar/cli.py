@@ -12,6 +12,7 @@ from dataclasses import asdict
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+from . import __version__
 from .access import (
     UOFT_EBSCO_URL,
     AccessError,
@@ -93,6 +94,11 @@ access:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="research-radar")
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     init = subparsers.add_parser(

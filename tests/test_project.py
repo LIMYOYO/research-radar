@@ -9,6 +9,7 @@ from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
 
+from research_radar import __version__
 from research_radar.cli import _doctor, _initialize_project, main
 from research_radar.project import (
     ProjectError,
@@ -30,6 +31,14 @@ ANONYMIZED_LAYOUT = (
 
 
 class ProjectTests(unittest.TestCase):
+    def test_cli_reports_package_version(self) -> None:
+        output = StringIO()
+        with redirect_stdout(output), self.assertRaises(SystemExit) as raised:
+            main(["--version"])
+
+        self.assertEqual(raised.exception.code, 0)
+        self.assertEqual(output.getvalue().strip(), f"research-radar {__version__}")
+
     def test_ingests_profile_tex_and_bibtex(self) -> None:
         snapshot = ingest_project(FIXTURE)
 

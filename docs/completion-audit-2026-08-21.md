@@ -18,12 +18,12 @@ Run from the repository root:
   .agents/skills/research-radar
 ```
 
-Observed on 2026-08-21:
+Observed through 2026-08-22:
 
-- 67 tests passed;
+- 68 tests passed;
 - all source and test modules compiled;
 - the repository skill validated;
-- a version 0.3.0 wheel installed and initialized a project in a fresh Python
+- a version 0.3.1 wheel installed and initialized a project in a fresh Python
   3.9 virtual environment;
 - the portable installer created an isolated CLI and Codex skill in fresh
   custom paths, then upgraded them in place while preserving the prior skill;
@@ -67,5 +67,5 @@ Only the following items cannot be honestly completed from the repository alone:
 2. observe four consecutive weeks of useful incremental briefings and record
    onboarding friction from the second researcher.
 
-Until those gates are met, version 0.2.0 is a published public beta, not a
+Until those gates are met, version 0.3.1 is a published public beta, not a
 validated version 1 product.

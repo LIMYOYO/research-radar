@@ -11,6 +11,9 @@ from research_radar.state import ProfileChangePending, save_snapshot, state_coun
 
 
 FIXTURE = Path(__file__).resolve().parents[1] / "examples" / "synthetic-project"
+ANONYMIZED_LAYOUT = (
+    Path(__file__).resolve().parents[1] / "examples" / "anonymized-real-layout"
+)
 
 
 class ProjectTests(unittest.TestCase):
@@ -50,6 +53,21 @@ class ProjectTests(unittest.TestCase):
                 snapshot.duplicate_identities,
                 {"doi:10.1000/test": ("one", "two")},
             )
+
+    def test_malformed_bibtex_reports_file_and_repair_hint(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "README.md").write_text("# Broken bibliography", encoding="utf-8")
+            (root / "paper.tex").write_text(
+                "\\cite{broken}\\bibliography{refs}", encoding="utf-8"
+            )
+            (root / "refs.bib").write_text(
+                "@article{broken, title={Unclosed}\n", encoding="utf-8"
+            )
+            with self.assertRaisesRegex(
+                Exception, r"refs\.bib.*unclosed.*delimiter"
+            ):
+                ingest_project(root)
 
     def test_arxiv_identifier_is_normalized_and_used_for_identity(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -105,6 +123,30 @@ class ProjectTests(unittest.TestCase):
                 {source.path for source in snapshot.source_files if source.kind == "tex"},
                 {"paper.tex", "sections/model.tex"},
             )
+
+    def test_anonymized_real_layout_ingests_nested_multifile_project(self) -> None:
+        snapshot = ingest_project(ANONYMIZED_LAYOUT)
+
+        self.assertEqual(snapshot.profile.project_name, "Capacity Sharing Under Uncertain Demand")
+        self.assertEqual(
+            set(snapshot.cited_keys),
+            {"synthetic-pooling", "synthetic-signals", "synthetic-method"},
+        )
+        self.assertEqual(len(snapshot.seeds), 3)
+        self.assertTrue(all(seed.cited_in_manuscript for seed in snapshot.seeds))
+        self.assertEqual(
+            {source.path for source in snapshot.source_files if source.kind == "tex"},
+            {
+                "paper/paper.tex",
+                "paper/sections/appendix.tex",
+                "paper/sections/introduction.tex",
+                "paper/sections/model.tex",
+            },
+        )
+        self.assertEqual(
+            {source.path for source in snapshot.source_files if source.kind == "bib"},
+            {"paper/appendix-references.bib", "paper/references.bib"},
+        )
 
     def test_snapshot_persistence_is_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

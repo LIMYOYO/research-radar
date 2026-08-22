@@ -20,6 +20,7 @@ from .access import (
     inspect_pdf,
     libkey_url,
 )
+from .acquisition import DEFAULT_MAX_BYTES, acquire_pdf
 from .config import load_config
 from .discovery import Candidate, discover
 from .distillation import build_context, validate_for_project
@@ -247,6 +248,29 @@ def build_parser() -> argparse.ArgumentParser:
     resolve.add_argument("doi")
     resolve.add_argument("--project", type=Path, default=Path.cwd())
 
+    acquire = access_subparsers.add_parser(
+        "acquire",
+        help="Try one public/OA PDF, validate and export it, or return a LibKey handoff.",
+    )
+    acquire.add_argument("doi")
+    acquire.add_argument("--project", type=Path, default=Path.cwd())
+    acquire.add_argument(
+        "--analysis-policy",
+        choices=("local-test", "strict"),
+        default="local-test",
+    )
+    acquire.add_argument(
+        "--max-mb",
+        type=int,
+        default=DEFAULT_MAX_BYTES // (1024 * 1024),
+        help="Hard per-paper download limit in MiB (default: 100).",
+    )
+    acquire.add_argument(
+        "--open-handoff",
+        action="store_true",
+        help="Open LibKey when automatic acquisition requires browser authentication.",
+    )
+
     return parser
 
 
@@ -372,6 +396,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             candidate_dicts = [candidate.to_dict() for candidate in outcome.candidates]
             manifest = {
+                "generated_at": datetime.now(timezone.utc).isoformat(),
                 "search_from": outcome.search_from,
                 "search_to": outcome.search_to,
                 "queries": outcome.queries,
@@ -419,6 +444,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             candidate_dicts = [candidate.to_dict() for candidate in outcome.candidates]
             manifest = {
+                "generated_at": datetime.now(timezone.utc).isoformat(),
                 "search_from": outcome.search_from,
                 "search_to": outcome.search_to,
                 "queries": outcome.queries,
@@ -505,6 +531,7 @@ def main(argv: list[str] | None = None) -> int:
             config = load_config(args.project)
             today = date.today().isoformat()
             manifest = {
+                "generated_at": f"{today}T00:00:00+00:00",
                 "search_from": "stored-state",
                 "search_to": today,
                 "queries": (),
@@ -690,6 +717,31 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
             return 0 if not result.errors else 1
+
+        if args.command == "access" and args.access_command == "acquire":
+            if args.max_mb < 1:
+                raise ValueError("--max-mb must be at least 1.")
+            result = acquire_pdf(
+                args.doi,
+                project=args.project,
+                analysis_policy=args.analysis_policy,
+                max_bytes=args.max_mb * 1024 * 1024,
+            )
+            print(
+                json.dumps(
+                    result.to_dict(),
+                    indent=2,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
+            if (
+                args.open_handoff
+                and result.status == "authentication-required"
+                and result.handoff_url
+            ):
+                webbrowser.open(result.handoff_url, new=2)
+            return 0 if result.status in {"acquired", "existing"} else 1
 
         if args.command == "access" and args.access_command == "import":
             destination, record, duplicate = import_pdf(

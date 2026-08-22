@@ -3,8 +3,8 @@
 The first Research Radar milestone is deliberately narrow:
 
 > Given one INFORMS DOI and an authorized University of Toronto user, obtain one
-> article PDF through a permitted route, archive it locally, and allow Codex to
-> read it only when the source license or terms permit.
+> article PDF through a permitted route, archive it locally, and make it
+> available for private local analysis under the selected analysis policy.
 
 Authentication and the final single-article download remain in the user's
 browser. Research Radar never receives UTORid credentials, Duo responses,
@@ -22,15 +22,19 @@ python3 -m venv .venv
 
 ## One-paper INFORMS workflow
 
-1. Resolve and inspect the available routes without downloading:
+1. Attempt one bounded automatic acquisition:
 
    ```sh
-   .venv/bin/research-radar access resolve 10.1287/mnsc.2025.00819 \
+   .venv/bin/research-radar access acquire 10.1287/mnsc.2025.00819 \
      --project /path/to/my-research-project
    ```
 
-2. If no verified open copy is available, start or refresh the U of T Business
-   Source Premier session:
+   If this returns `acquired` or `existing`, the verified PDF and page-delimited
+   text are already local. If it returns `authentication-required`, continue
+   with the reported `handoff_url`. Use `access resolve` when only inspecting
+   routes is desired.
+
+2. Start or refresh the U of T Business Source Premier session:
 
    ```sh
    .venv/bin/research-radar access session
@@ -43,7 +47,9 @@ python3 -m venv .venv
    .venv/bin/research-radar access open 10.1287/mnsc.2025.00819
    ```
 
-5. Use the offered PDF/full-text link and download this single article.
+5. Use the offered PDF/full-text link and download this single article. In the
+   EBSCO PDF viewer, the toolbar download button opens a modal; keep PDF selected
+   and confirm Download.
 6. Import the downloaded file into the research project:
 
    ```sh
@@ -102,11 +108,13 @@ For a clearly licensed open-access paper, record the license explicitly:
 
 | Case | DOI | Expected result |
 | --- | --- | --- |
-| Current subscription INFORMS article | `10.1287/mnsc.2025.00819` | U of T/LibKey route yields an importable personal-use PDF; Codex eligibility follows the displayed terms |
+| Current subscription INFORMS article | `10.1287/mnsc.2025.00819` | U of T/LibKey route yields an importable personal-use PDF; the prototype records terms but `local-test` does not block local analysis |
 | Open-access INFORMS article | `10.1287/mnsc.2023.00320` | OA route yields an importable PDF without institutional authentication |
-| Repeated import | Either DOI | No duplicate PDF or ledger entry |
+| Repeated import under the same policy | Either DOI | No duplicate PDF or ledger entry; changing policy may append one audit record without copying the PDF |
 | Missing full text | Any DOI | Route failure is reported; no fake PDF record is written |
 | Encrypted or invalid file | Any DOI | Import fails with an actionable error |
+| Public URL returns HTML/403 | Any DOI | No ledger is written; the result is `authentication-required` with a LibKey handoff |
+| Oversized response | Any DOI | Streaming stops at the configured `--max-mb` limit |
 
 ## Security and licensing boundary
 

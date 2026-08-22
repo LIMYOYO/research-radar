@@ -18,6 +18,7 @@ class DistillationError(ValueError):
 REQUIRED_FIELDS = {
     "schema_version",
     "candidate_identity",
+    "paper_type",
     "research_question_and_setting",
     "framework",
     "mechanism_or_identification",
@@ -42,6 +43,7 @@ RELATIONSHIPS = {
 }
 ACTIONS = {"read-now", "cite", "watch", "ignore"}
 EVIDENCE_LEVELS = {"full-text", "abstract", "metadata"}
+PAPER_TYPES = {"analytical", "empirical", "experimental", "methods"}
 TEXT_FIELDS = {
     "candidate_identity",
     "research_question_and_setting",
@@ -74,6 +76,10 @@ def validate_distillation(value: object) -> dict[str, Any]:
         raise DistillationError("recommended_action must be read-now, cite, watch, or ignore.")
     if value.get("evidence_level") not in EVIDENCE_LEVELS:
         raise DistillationError("evidence_level must be full-text, abstract, or metadata.")
+    if value.get("paper_type") not in PAPER_TYPES:
+        raise DistillationError(
+            "paper_type must be analytical, empirical, experimental, or methods."
+        )
     sources = value.get("evidence_sources")
     if (
         not isinstance(sources, list)
@@ -171,5 +177,6 @@ def build_context(
             "required_fields": sorted(REQUIRED_FIELDS),
             "relationship_taxonomy": sorted(RELATIONSHIPS),
             "actions": sorted(ACTIONS),
+            "paper_types": sorted(PAPER_TYPES),
         },
     }

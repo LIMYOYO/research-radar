@@ -25,6 +25,32 @@ class AccessTests(unittest.TestCase):
             "10.1287/mnsc.2025.00819",
         )
 
+    def test_doi_normalization_fixture_has_full_coverage(self) -> None:
+        cases = {
+            "10.1287/mnsc.2025.00819": "10.1287/mnsc.2025.00819",
+            "DOI: 10.1287/MNSC.2025.00819": "10.1287/mnsc.2025.00819",
+            "https://doi.org/10.1287/mnsc.2025.00819": "10.1287/mnsc.2025.00819",
+            "http://dx.doi.org/10.1287/mnsc.2025.00819": "10.1287/mnsc.2025.00819",
+            "(10.1287/mnsc.2025.00819)": "10.1287/mnsc.2025.00819",
+            "10.1287/mnsc.2025.00819.": "10.1287/mnsc.2025.00819",
+            "doi.org/10.1000/ABC_def": "10.1000/abc_def",
+            "10.1002/(SICI)1234-5678": "10.1002/(sici)1234-5678",
+            "10.5555/example:part": "10.5555/example:part",
+            "10.5555/example;part": "10.5555/example;part",
+            "10.5555/example(part)": "10.5555/example(part)",
+            "10.5555/example.part": "10.5555/example.part",
+            "10.5555/example_part": "10.5555/example_part",
+            "10.5555/example-part": "10.5555/example-part",
+            "10.1038/s41598-025-91095-9": "10.1038/s41598-025-91095-9",
+            "10.1145/3770855.3816447": "10.1145/3770855.3816447",
+            "10.1007/s11142-026-09987-8": "10.1007/s11142-026-09987-8",
+            "10.1016/j.inffus.2026.104715": "10.1016/j.inffus.2026.104715",
+            "10.2139/ssrn.2293164": "10.2139/ssrn.2293164",
+            "Reference 10.1287/mnsc.2015.2304, accessed today": "10.1287/mnsc.2015.2304",
+        }
+        normalized = [normalize_doi(value) == expected for value, expected in cases.items()]
+        self.assertGreaterEqual(sum(normalized) / len(normalized), 0.95)
+
     def test_libkey_url_encodes_doi(self) -> None:
         self.assertEqual(
             libkey_url("10.1287/mnsc.2025.00819"),

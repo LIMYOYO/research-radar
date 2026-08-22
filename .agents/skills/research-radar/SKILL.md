@@ -25,8 +25,10 @@ If the project has not been initialized, run `research-radar init /absolute/proj
 - For a normal update, run `research-radar run --project /absolute/project/path`. Respect a user-supplied date window; otherwise use the configured lookback.
 - For a weekly synthesis, run `research-radar weekly --project /absolute/project/path` after the daily state has accumulated.
 - For offline re-triage after feedback, run `research-radar brief --project /absolute/project/path`.
+- For a high-signal DOI without local full text, first run `research-radar access acquire DOI --project /absolute/project/path`. It may automatically archive and export one verified public/OA PDF. Never loop this command over an unreviewed candidate set.
+- If `access acquire` returns `authentication-required`, follow [references/browser-access.md](references/browser-access.md) with the connected authorized browser when available.
+- If the browser asks for institutional login or Duo, leave the tab as a user handoff and finish the metadata report. Do not request, inspect, enter, or store credentials, Duo responses, cookies, or tokens.
 - For a requested paper already downloaded by the user, import it with `research-radar access import` and the correct DOI/route before reading it.
-- For access troubleshooting, start with `research-radar access resolve DOI --project /absolute/project/path`, then follow the documented one-paper route in `docs/access-first.md`. Pause for interactive institutional authentication rather than asking for or recording credentials.
 
 Read the generated Markdown report and focus on `read-now` and `watch` candidates. Do not inflate the result to a fixed count when the report has no high-signal change.
 
@@ -53,6 +55,11 @@ research-radar distill import /absolute/project/path/.research-radar/distillatio
 Run `research-radar brief --project /absolute/project/path` afterward so the
 deep result replaces the shallow baseline card. Do not claim completion of a
 deep read if the import is rejected.
+
+Before claiming `full-text`, verify that the acquisition output contains the
+requested DOI, a local PDF path, a local text path, page count, checksum, and
+`codex_eligible: true` in the ledger. A link label, browser viewer, or provider
+availability flag alone is insufficient.
 
 Treat discovery and evidence as separate:
 

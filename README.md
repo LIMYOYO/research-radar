@@ -186,7 +186,8 @@ The first access vertical slice is complete when it can:
 - route one current INFORMS DOI through LibKey or the authorized provider;
 - import the downloaded PDF into `.research-radar/papers/`;
 - validate that the file is an unencrypted, structurally valid PDF;
-- verify that Codex can extract text when the source license or terms permit;
+- verify that Codex can extract text under the selected `local-test` or `strict`
+  analysis policy;
 - record DOI, route, timestamp, checksum, page count, technical readability,
   license, and AI-use eligibility;
 - avoid duplicate files and ledger entries on repeated import;
@@ -223,6 +224,7 @@ The first CLI slice is implemented locally:
 
 ```sh
 research-radar access session
+research-radar access acquire 10.1287/mnsc.2025.00819 --project /path/to/project
 research-radar access resolve 10.1287/mnsc.2025.00819 --project /path/to/project
 research-radar access open 10.1287/mnsc.2025.00819
 research-radar access import ~/Downloads/article.pdf \
@@ -235,9 +237,11 @@ research-radar access text 10.1287/mnsc.2025.00819 \
   --project /path/to/my-research-project
 ```
 
-`access resolve` is read-only: it ranks reported open copies, publisher
-full-text candidates, LibKey, and the canonical DOI route before any manual
-download. Installation and the complete manual test are documented in
+`access acquire` attempts exactly one bounded public/OA PDF, verifies the PDF
+signature and structure, archives it, and exports page-delimited text. If the
+provider requires browser authentication, it returns a LibKey handoff without
+writing a fake ledger record. `access resolve` is the read-only inspection
+variant. Installation and the complete browser-assisted test are documented in
 [`docs/access-first.md`](docs/access-first.md). A repository-scoped skill and
 scheduled-workflow guide are included in the repository.
 
@@ -320,8 +324,14 @@ Run the checked-in 20-candidate offline ranking evaluation with:
 ```
 
 The synthetic fixture currently records Research Radar precision@5/10 of
-1.00/1.00 versus a title-and-abstract keyword baseline of 0.60/0.70. These are
-regression checks, not a claim about real-project quality.
+1.00/1.00 versus a title-and-abstract keyword baseline of 0.60/0.70, with
+100% explicit identity-contract coverage and a 0% duplicate-identity rate.
+These are regression checks, not a claim about real-project quality.
+
+[`examples/anonymized-real-layout`](examples/anonymized-real-layout) adds a
+nested, multi-file regression fixture derived only from private-project
+directory shapes. Every substantive research field is synthetic and safe to
+publish.
 
 Example research profiles are available for
 [analytical OM](examples/profiles/analytical-om.md),

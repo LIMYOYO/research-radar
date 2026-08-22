@@ -45,10 +45,12 @@ Run the daily incremental radar with the CLI at
 briefing. Report only read-now and watch signals; do not fill a quota. For the
 highest-signal paper, compare its question, primitives, mechanism, method,
 assumptions, and contribution with RESEARCH_PROFILE.md. Keep metadata,
-abstract, and full-text evidence labels distinct. If a local PDF is archived,
-use `access text DOI --project /absolute/path/to/my-research-project` before
-claiming full-text evidence, then write and persist a JSON result through
-`distill import`. If institutional authentication is unavailable,
+abstract, and full-text evidence labels distinct. Run `access acquire DOI` for
+at most the highest-signal unresolved paper. If it returns an institutional
+handoff and an authorized browser session is available, use the one-paper
+LibKey/EBSCO download flow, import the downloaded PDF, and run `access text DOI`
+before claiming full-text evidence. Then write and persist a JSON result through
+`distill import`. If institutional authentication or Duo is required,
 leave the paper as an access request and finish the metadata report. Do not edit
 paper.tex or references.bib. End with the report path and any recovery action.
 ```

@@ -135,6 +135,22 @@ class RankingAndReportingTests(unittest.TestCase):
             self.assertIn("No unseen high-signal change", content)
             self.assertIn("feedback:known", content)
 
+            save_feedback(root, identity=paper.identity, label="watch", note="Reconsider")
+            reranked = rank_candidates(
+                snapshot, [paper], feedback=latest_feedback(root)
+            )
+            changed = write_briefing(
+                root,
+                project_name=snapshot.profile.project_name,
+                project_fingerprint=snapshot.fingerprint,
+                ranked=reranked,
+                manifest=manifest,
+                top_n=5,
+            )
+            self.assertFalse(changed.duplicate)
+            self.assertNotEqual(changed.path, first.path)
+            self.assertEqual(changed.shown_count, 1)
+
             records = load_candidate_records(root, first_seen_since="2000-01-01T00:00:00+00:00")
             self.assertEqual(len(records), 2)
             self.assertEqual(
@@ -145,7 +161,7 @@ class RankingAndReportingTests(unittest.TestCase):
                 root,
                 project_name=snapshot.profile.project_name,
                 project_fingerprint=snapshot.fingerprint,
-                ranked=ranked,
+                ranked=rank_candidates(snapshot, [second_paper]),
                 feedback=latest_feedback(root),
                 days=7,
                 top_n=10,
@@ -154,6 +170,7 @@ class RankingAndReportingTests(unittest.TestCase):
             self.assertIn("Research Radar Weekly", weekly_content)
             self.assertIn("Pattern synthesis", weekly_content)
             self.assertIn("Full-text queue", weekly_content)
+            self.assertIn("research-radar access acquire", weekly_content)
 
 
 if __name__ == "__main__":

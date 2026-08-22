@@ -3,10 +3,11 @@
   "$id": "https://research-radar.local/schemas/candidate.schema.json",
   "title": "Research Radar candidate paper",
   "type": "object",
-  "required": ["schema_version", "identity", "title", "discovered_by", "access_status", "evidence_level"],
+  "required": ["schema_version", "identity", "identity_status", "title", "discovered_by", "access_status", "evidence_level"],
   "properties": {
     "schema_version": {"const": 1},
     "identity": {"type": "string", "minLength": 1},
+    "identity_status": {"enum": ["persistent", "title-fallback"]},
     "doi": {"type": ["string", "null"]},
     "openalex_id": {"type": ["string", "null"]},
     "semantic_scholar_id": {"type": ["string", "null"]},

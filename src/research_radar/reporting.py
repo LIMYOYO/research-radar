@@ -21,6 +21,25 @@ class ReportResult:
     suppressed_count: int
 
 
+def _digest_item(item: RankedCandidate) -> dict[str, object]:
+    return {
+        "identity": item.candidate.identity,
+        "candidate": item.candidate.to_dict(),
+        "score": item.score,
+        "scores": item.scores,
+        "matched_concepts": item.matched_concepts,
+        "access_status": item.candidate.access_status,
+        "evidence_level": item.candidate.evidence_level,
+        "evidence_note": item.evidence_note,
+        "relationship": item.relationship,
+        "recommended_action": item.recommended_action,
+        "why_it_matters": item.why_it_matters,
+        "distillation": item.distillation,
+        "suppressed": item.suppressed,
+        "suppression_reason": item.suppression_reason,
+    }
+
+
 def render_briefing(
     *,
     project_name: str,
@@ -36,7 +55,10 @@ def render_briefing(
         if not item.suppressed and item.recommended_action != "weak"
     ][:top_n]
     suppressed = [item for item in ranked if item.suppressed]
-    generated_at = datetime.now(timezone.utc).isoformat()
+    generated_at = str(
+        manifest.get("generated_at")
+        or f"{manifest['search_to']}T00:00:00+00:00"
+    )
     lines = [
         f"# Research Radar — {project_name}",
         "",
@@ -77,9 +99,13 @@ def render_briefing(
                 f"- **Distillation:** {item.distillation}",
                 f"- **Evidence note:** {item.evidence_note}",
                 f"- **Score trace:** " + ", ".join(f"{name}={value:.3f}" for name, value in item.scores.items()),
-                "",
             ]
         )
+        if paper.doi and paper.access_status != "full-text":
+            lines.append(
+                f"- **Access next step:** `research-radar access acquire {paper.doi} --project .`"
+            )
+        lines.append("")
 
     lines.extend(["## Search audit", ""])
     lines.append("- Queries: " + "; ".join(manifest.get("queries", [])))
@@ -120,12 +146,11 @@ def write_briefing(
         "project_fingerprint": project_fingerprint,
         "search_from": manifest["search_from"],
         "search_to": manifest["search_to"],
-        "candidate_identities": [
-            item.candidate.identity
-            for item in ranked
-            if not item.suppressed and item.recommended_action != "weak"
-        ][:top_n],
-        "suppressed": [item.candidate.identity for item in ranked if item.suppressed],
+        "queries": manifest.get("queries", ()),
+        "adapter_status": manifest.get("adapter_status", {}),
+        "errors": manifest.get("errors", ()),
+        "ranked": [_digest_item(item) for item in ranked],
+        "top_n": top_n,
     }
     digest = hashlib.sha256(
         json.dumps(stable_payload, sort_keys=True).encode("utf-8")
@@ -244,7 +269,7 @@ def render_weekly(
         paper = item.candidate
         if paper.doi:
             lines.append(
-                f"- `{paper.doi}` — {paper.title}: run `research-radar access resolve {paper.doi} --project .`"
+                f"- `{paper.doi}` — {paper.title}: run `research-radar access acquire {paper.doi} --project .`"
             )
         else:
             lines.append(f"- `{paper.identity}` — {paper.title}: stable DOI unresolved")
@@ -266,11 +291,8 @@ def write_weekly(
     stable_payload = {
         "project_fingerprint": project_fingerprint,
         "days": days,
-        "visible": [
-            item.candidate.identity
-            for item in ranked
-            if not item.suppressed and item.recommended_action != "weak"
-        ][:top_n],
+        "ranked": [_digest_item(item) for item in ranked],
+        "top_n": top_n,
         "feedback": feedback,
     }
     digest = hashlib.sha256(

@@ -45,6 +45,7 @@ def payload(identity: str = "doi:10.5555/deep") -> dict[str, object]:
     return {
         "schema_version": 1,
         "candidate_identity": identity,
+        "paper_type": "analytical",
         "research_question_and_setting": "A platform recommends sellers under uncertain quality.",
         "framework": "A dynamic Bayesian platform-seller model.",
         "mechanism_or_identification": "Sellers distort the signal used for learning.",
@@ -92,6 +93,7 @@ class DistillationTests(unittest.TestCase):
             self.assertEqual(hydrated.relationship, "competes")
             self.assertEqual(hydrated.recommended_action, "read-now")
             self.assertIn("Contribution delta", hydrated.why_it_matters)
+            self.assertIn("Paper type: analytical", hydrated.distillation)
             self.assertEqual(hydrated.scores["distillation_confidence"], 0.8)
             context = build_context(snapshot, paper)
             self.assertEqual(context["available_evidence"]["levels"], ["metadata", "abstract"])

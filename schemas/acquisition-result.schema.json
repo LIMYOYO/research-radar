@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-radar.local/schemas/acquisition-result.schema.json",
+  "title": "Research Radar automatic single-paper acquisition",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "doi",
+    "status",
+    "pdf_file",
+    "text_file",
+    "route",
+    "license",
+    "sha256",
+    "pages",
+    "text_characters",
+    "codex_eligible",
+    "attempts",
+    "handoff_url",
+    "resolver_errors"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "doi": {"type": "string", "pattern": "^10\\."},
+    "status": {"enum": ["acquired", "existing", "authentication-required", "unavailable"]},
+    "pdf_file": {"type": ["string", "null"]},
+    "text_file": {"type": ["string", "null"]},
+    "route": {"type": ["string", "null"]},
+    "license": {"type": ["string", "null"]},
+    "sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+    "pages": {"type": ["integer", "null"], "minimum": 1},
+    "text_characters": {"type": ["integer", "null"], "minimum": 1},
+    "codex_eligible": {"type": "boolean"},
+    "attempts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["route", "url", "status", "detail"],
+        "properties": {
+          "route": {"type": "string"},
+          "url": {"type": "string"},
+          "status": {"enum": ["acquired", "existing", "failed"]},
+          "detail": {"type": "string"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "handoff_url": {"type": ["string", "null"]},
+    "resolver_errors": {"type": "array", "items": {"type": "string"}}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"enum": ["acquired", "existing"]}}},
+      "then": {
+        "properties": {
+          "pdf_file": {"type": "string"},
+          "text_file": {"type": "string"},
+          "route": {"type": "string"},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "pages": {"type": "integer", "minimum": 1},
+          "text_characters": {"type": "integer", "minimum": 1},
+          "codex_eligible": {"const": true},
+          "handoff_url": {"type": "null"}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"status": {"enum": ["authentication-required", "unavailable"]}}},
+      "then": {
+        "properties": {
+          "pdf_file": {"type": "null"},
+          "text_file": {"type": "null"},
+          "route": {"type": "null"},
+          "sha256": {"type": "null"},
+          "pages": {"type": "null"},
+          "text_characters": {"type": "null"},
+          "codex_eligible": {"const": false}
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

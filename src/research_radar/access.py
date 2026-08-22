@@ -250,10 +250,22 @@ def import_pdf(
         license_url=license_url,
     )
 
-    if not duplicate:
+    record_value = asdict(record)
+    comparison_fields = tuple(
+        key for key in record_value if key not in {"acquired_at", "source_filename"}
+    )
+    previous = latest_acquisition_record(project_root, normalized_doi) if duplicate else None
+    policy_changed = bool(
+        duplicate
+        and (
+            previous is None
+            or any(previous.get(key) != record_value[key] for key in comparison_fields)
+        )
+    )
+    if not duplicate or policy_changed:
         ledger = radar_root / "access-ledger.jsonl"
         with ledger.open("a", encoding="utf-8") as stream:
-            stream.write(json.dumps(asdict(record), ensure_ascii=False, sort_keys=True))
+            stream.write(json.dumps(record_value, ensure_ascii=False, sort_keys=True))
             stream.write("\n")
 
     return destination, record, duplicate
@@ -274,6 +286,18 @@ def _ledger_records(project_root: Path) -> list[dict[str, object]]:
         if isinstance(value, dict):
             records.append(value)
     return records
+
+
+def latest_acquisition_record(
+    project: str | Path, doi: str
+) -> dict[str, object] | None:
+    """Return the newest ledger record for one DOI, if any."""
+    root = Path(project).expanduser().resolve()
+    normalized = normalize_doi(doi)
+    matching = [
+        record for record in _ledger_records(root) if record.get("doi") == normalized
+    ]
+    return matching[-1] if matching else None
 
 
 def export_pdf_text(

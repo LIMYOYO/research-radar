@@ -54,6 +54,7 @@ class Candidate:
     cited_by_count: int | None = None
     publication_date: str | None = None
     semantic_scholar_id: str | None = None
+    identity_status: str = "persistent"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -209,6 +210,7 @@ def candidate_from_crossref(item: dict[str, Any], lane: str) -> Candidate | None
         evidence_level="abstract" if abstract else "metadata",
         cited_by_count=item.get("is-referenced-by-count"),
         publication_date=publication_date,
+        identity_status="persistent" if doi else "title-fallback",
     )
 
 
@@ -261,6 +263,7 @@ def candidate_from_openalex(item: dict[str, Any], lane: str) -> Candidate | None
         evidence_level=evidence_level,
         cited_by_count=item.get("cited_by_count"),
         publication_date=item.get("publication_date"),
+        identity_status="persistent" if (doi or openalex_id) else "title-fallback",
     )
 
 
@@ -308,6 +311,9 @@ def candidate_from_semantic_scholar(
         cited_by_count=item.get("citationCount"),
         publication_date=item.get("publicationDate"),
         semantic_scholar_id=semantic_scholar_id,
+        identity_status=(
+            "persistent" if (doi or semantic_scholar_id) else "title-fallback"
+        ),
     )
 
 
@@ -507,12 +513,31 @@ def _merge_candidate(left: Candidate, right: Candidate) -> Candidate:
     authors = left.authors if len(left.authors) >= len(right.authors) else right.authors
     evidence_rank = {"metadata": 0, "abstract": 1, "full-text": 2}
     richer = right if evidence_rank[right.evidence_level] > evidence_rank[left.evidence_level] else left
+    merged_doi = left.doi or right.doi
+    merged_openalex_id = left.openalex_id or right.openalex_id
+    merged_semantic_scholar_id = left.semantic_scholar_id or right.semantic_scholar_id
+    merged_identity = _candidate_identity(
+        doi=merged_doi,
+        openalex_id=merged_openalex_id,
+        title=left.title if len(left.title) >= len(right.title) else right.title,
+    )
+    if (
+        not merged_doi
+        and not merged_openalex_id
+        and merged_semantic_scholar_id
+    ):
+        merged_identity = f"semantic-scholar:{merged_semantic_scholar_id.lower()}"
     return replace(
         richer,
-        identity=left.identity if left.doi else right.identity,
-        doi=left.doi or right.doi,
-        openalex_id=left.openalex_id or right.openalex_id,
-        semantic_scholar_id=left.semantic_scholar_id or right.semantic_scholar_id,
+        identity=merged_identity,
+        doi=merged_doi,
+        openalex_id=merged_openalex_id,
+        semantic_scholar_id=merged_semantic_scholar_id,
+        identity_status=(
+            "persistent"
+            if (merged_doi or merged_openalex_id or merged_semantic_scholar_id)
+            else "title-fallback"
+        ),
         title=left.title if len(left.title) >= len(right.title) else right.title,
         authors=authors,
         year=left.year or right.year,

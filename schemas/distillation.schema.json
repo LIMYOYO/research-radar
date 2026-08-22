@@ -6,6 +6,7 @@
   "required": [
     "schema_version",
     "candidate_identity",
+    "paper_type",
     "research_question_and_setting",
     "framework",
     "mechanism_or_identification",
@@ -21,6 +22,7 @@
   "properties": {
     "schema_version": {"const": 1},
     "candidate_identity": {"type": "string", "minLength": 1},
+    "paper_type": {"enum": ["analytical", "empirical", "experimental", "methods"]},
     "research_question_and_setting": {"type": "string"},
     "framework": {"type": "string"},
     "mechanism_or_identification": {"type": "string"},

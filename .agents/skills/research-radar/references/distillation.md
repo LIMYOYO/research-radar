@@ -14,6 +14,9 @@ Use this standard only for candidates that survive the deterministic triage. The
 8. **Action** — `read-now`, `cite`, `watch`, or ignore, with one sentence of justification.
 9. **Evidence** — `full-text`, `abstract`, or `metadata`, plus the DOI/link and local PDF path when applicable.
 
+Set `paper_type` to exactly one of `analytical`, `empirical`, `experimental`,
+or `methods` and apply the matching standard below.
+
 ## Analytical papers
 
 Name players, sequence, information, payoff-relevant primitives, equilibrium or optimization concept, central comparative statics, and the assumption doing the most work. Compare mechanisms even when application keywords differ.
@@ -25,6 +28,14 @@ Name the unit and setting, data, treatment or variation, estimand, identificatio
 ## Experimental papers
 
 Name assignment, treatments, outcome, manipulation checks, sample, and the behavioral mechanism. Do not translate a lab result into a field claim without qualification.
+
+## Methods papers
+
+Name the input, output, target problem class, algorithm or estimator, assumptions,
+formal guarantee, computational or statistical complexity, benchmark, and
+failure regime. Distinguish a genuinely new method from a new application of an
+existing method. Explain exactly which step of the current project the method
+could replace or improve, and what new validation burden it would introduce.
 
 ## Evidence discipline
 

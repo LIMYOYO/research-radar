@@ -60,6 +60,24 @@ every download rather than trusting a filename or link label.
 - OA PDF available to Codex under an explicit license: passed
 - Subscription EBSCO PDF technically available to the local prototype: passed
 
-The next product milestone is project ingestion and discovery. Alternate-copy
-resolution remains useful because OpenAlex did not correctly identify the OA
-status of either recent INFORMS test record.
+## Revalidated browser-assisted chain
+
+The complete chain was repeated after adding `access acquire`:
+
+1. the command-line publisher candidate returned HTTP 403 and correctly
+   returned `authentication-required` with no ledger entry;
+2. LibKey recognized University of Toronto and exposed `Download PDF`;
+3. the existing authenticated EBSCO session opened all 22 pages without another
+   Duo prompt;
+4. the EBSCO download modal produced a 3,675,962-byte PDF;
+5. import reproduced SHA-256
+   `7c5e4b37d7863d8ee2d993565220d2be5abfe5f1e0094b2b37837b374fd4b15e`;
+6. text export produced 115,732 page-delimited characters and marked the local
+   copy Codex-eligible.
+
+This establishes a deterministic fallback: automatic public download when
+possible, authorized browser handoff when required, and the same local
+validation/import/text pipeline in both cases.
+
+Alternate-copy resolution remains useful because OpenAlex did not correctly
+identify the OA status of either recent INFORMS test record.

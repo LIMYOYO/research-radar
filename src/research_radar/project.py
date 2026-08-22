@@ -334,6 +334,55 @@ def _entry_preprint_id(entry: dict[str, object]) -> str | None:
     return None
 
 
+def _validate_bibtex_structure(text: str, relative_path: Path) -> int:
+    """Detect common corruption that bibtexparser otherwise drops silently."""
+    entry_starts: list[tuple[str, int, bool]] = []
+    for match in re.finditer(r"(?m)^\s*@([A-Za-z]+)\s*([^\s])?", text):
+        entry_type = match.group(1).lower()
+        if entry_type in {"comment", "preamble", "string"}:
+            continue
+        line = text.count("\n", 0, match.start()) + 1
+        entry_starts.append((entry_type, line, match.group(2) in {"{", "("}))
+    malformed_start = next((item for item in entry_starts if not item[2]), None)
+    if malformed_start:
+        entry_type, line, _ = malformed_start
+        raise ProjectError(
+            f"Malformed BibTeX in {relative_path} at line {line}: "
+            f"@{entry_type} must be followed by '{{' or '('."
+        )
+
+    depth = 0
+    escaped = False
+    in_comment = False
+    for offset, character in enumerate(text):
+        if in_comment:
+            if character == "\n":
+                in_comment = False
+            continue
+        if character == "%" and not escaped:
+            in_comment = True
+            continue
+        if character == "\\" and not escaped:
+            escaped = True
+            continue
+        if character == "{" and not escaped:
+            depth += 1
+        elif character == "}" and not escaped:
+            depth -= 1
+            if depth < 0:
+                line = text.count("\n", 0, offset) + 1
+                raise ProjectError(
+                    f"Malformed BibTeX in {relative_path} at line {line}: "
+                    "unexpected closing brace."
+                )
+        escaped = False
+    if depth:
+        raise ProjectError(
+            f"Malformed BibTeX in {relative_path}: {depth} unclosed '{{' delimiter(s)."
+        )
+    return len(entry_starts)
+
+
 def parse_bibliography(
     root: Path,
     cited_keys: Iterable[str],
@@ -345,11 +394,19 @@ def parse_bibliography(
     selected = tuple(bibliography_files)
     paths = list(selected) if selected else discover_files(root, ".bib")
     for path in paths:
+        relative = path.relative_to(root)
+        raw_bibtex = path.read_text(encoding="utf-8")
+        expected_entries = _validate_bibtex_structure(raw_bibtex, relative)
         try:
-            database = bibtexparser.loads(path.read_text(encoding="utf-8"))
+            database = bibtexparser.loads(raw_bibtex)
         except Exception as exc:
-            relative = path.relative_to(root)
             raise ProjectError(f"Could not parse BibTeX file {relative}: {exc}") from exc
+        if len(database.entries) != expected_entries:
+            raise ProjectError(
+                f"Malformed BibTeX in {relative}: found {expected_entries} entry "
+                f"start(s) but parsed {len(database.entries)}. Check commas, citation keys, "
+                "and closing delimiters."
+            )
         for entry in database.entries:
             key = str(entry.get("ID") or "").strip()
             if not key:

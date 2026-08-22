@@ -16,7 +16,8 @@ Gate A0 is:
 
 > Given one INFORMS DOI and an authorized University of Toronto user, route the
 > user to a permitted full-text source, acquire one article PDF locally, record
-> its provenance, and allow Codex reading only when the applicable terms permit.
+> its provenance, and make it available for local analysis under the explicitly
+> selected `local-test` or `strict` policy.
 
 Gate A0 was completed on 2026-08-21. Its acceptance checks were:
 
@@ -25,7 +26,9 @@ Gate A0 was completed on 2026-08-21. Its acceptance checks were:
 - one open-access INFORMS article completes the same local pipeline;
 - DOI, route, timestamp, checksum, page count, technical readability, and
   AI-use eligibility are recorded separately;
-- repeated import creates neither a duplicate PDF nor a duplicate ledger row;
+- repeated import under the same policy creates neither a duplicate PDF nor a
+  duplicate ledger row; a policy change creates an auditable policy record but
+  still no duplicate PDF;
 - invalid, encrypted, or HTML-disguised-as-PDF files are rejected;
 - no credential, cookie, unpublished manuscript, or PDF enters Git history.
 
@@ -137,7 +140,8 @@ Deliverables:
 - versioned research-profile schema;
 - daily briefing schema;
 - synthetic project fixture with TeX, BibTeX, and known expected outputs;
-- one anonymized real-project fixture supplied locally by an initial user;
+- one open-source-safe structural fixture derived from real project layouts,
+  with every research-specific field rewritten as synthetic content;
 - relevance feedback vocabulary: `read-now`, `cite`, `watch`, `known`, `off-topic`, `weak`, `duplicate`;
 - initial golden set of relevant, borderline, and irrelevant papers.
 
@@ -382,6 +386,7 @@ Implemented and tested:
 
 - Gate A0 on one subscription and one open-access INFORMS article;
 - local-test and strict analysis policies with provenance ledger;
+- bounded one-paper automatic acquisition with browser-authentication fallback;
 - page-delimited PDF text export for Codex;
 - research-profile, candidate, and briefing schemas;
 - TeX/BibTeX ingestion, DOI normalization, project fingerprinting, and SQLite state;

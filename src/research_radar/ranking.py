@@ -290,6 +290,7 @@ def apply_distillations(
                     f"Project consequence: {payload['project_consequence']}"
                 ),
                 distillation=(
+                    f"Paper type: {payload['paper_type']}. "
                     f"Question/setting: {payload['research_question_and_setting']} "
                     f"Framework: {payload['framework']} "
                     f"Mechanism: {payload['mechanism_or_identification']} "

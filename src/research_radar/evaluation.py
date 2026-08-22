@@ -17,6 +17,9 @@ from .ranking import RankedCandidate, rank_candidates, tokens
 class EvaluationResult:
     candidate_count: int
     relevant_count: int
+    persistent_identifier_rate: float
+    identity_contract_coverage: float
+    duplicate_identity_rate: float
     precision_at_5: float
     precision_at_10: float
     keyword_baseline_precision_at_5: float
@@ -104,9 +107,22 @@ def evaluate_fixture(
     precision_at_10 = _precision(visible, relevant, 10)
     baseline_at_5 = _keyword_precision(candidates, relevant, project_terms, 5)
     baseline_at_10 = _keyword_precision(candidates, relevant, project_terms, 10)
+    unique_identities = {candidate.identity for candidate in candidates}
+    persistent_count = sum(
+        candidate.identity_status == "persistent" for candidate in candidates
+    )
+    explicit_identity_count = sum(
+        candidate.identity_status in {"persistent", "title-fallback"}
+        for candidate in candidates
+    )
     return EvaluationResult(
         candidate_count=len(candidates),
         relevant_count=len(relevant),
+        persistent_identifier_rate=round(persistent_count / len(candidates), 4),
+        identity_contract_coverage=round(explicit_identity_count / len(candidates), 4),
+        duplicate_identity_rate=round(
+            (len(candidates) - len(unique_identities)) / len(candidates), 4
+        ),
         precision_at_5=round(precision_at_5, 4),
         precision_at_10=round(precision_at_10, 4),
         keyword_baseline_precision_at_5=round(baseline_at_5, 4),

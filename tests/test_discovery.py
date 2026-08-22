@@ -131,6 +131,31 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(candidate.publication_date, "2026")  # type: ignore[union-attr]
         self.assertEqual(candidate.year, 2026)  # type: ignore[union-attr]
 
+    def test_title_fallback_identity_is_explicitly_marked_unresolved(self) -> None:
+        item = crossref_item()
+        item.pop("DOI")
+        candidate = candidate_from_crossref(item, "crossref:keywords")
+        self.assertIsNotNone(candidate)
+        self.assertTrue(candidate.identity.startswith("title:"))  # type: ignore[union-attr]
+        self.assertEqual(candidate.identity_status, "title-fallback")  # type: ignore[union-attr]
+
+    def test_merge_never_downgrades_a_provider_identifier_to_title(self) -> None:
+        openalex_data = openalex_item()
+        openalex_data["doi"] = None
+        openalex_data["ids"] = {}
+        crossref_data = crossref_item()
+        crossref_data.pop("DOI")
+        openalex = candidate_from_openalex(openalex_data, "openalex:related")
+        crossref = candidate_from_crossref(crossref_data, "crossref:keywords")
+
+        self.assertIsNotNone(openalex)
+        self.assertIsNotNone(crossref)
+        for ordering in ([openalex, crossref], [crossref, openalex]):
+            merged = merge_candidates(ordering)  # type: ignore[arg-type]
+            self.assertEqual(len(merged), 1)
+            self.assertEqual(merged[0].identity, "openalex:wfuture")
+            self.assertEqual(merged[0].identity_status, "persistent")
+
     def test_semantic_scholar_candidate_preserves_independent_identity(self) -> None:
         candidate = candidate_from_semantic_scholar(
             semantic_scholar_item(), "semanticscholar:forward-citations"

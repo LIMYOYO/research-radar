@@ -18,6 +18,9 @@ class EvaluationTests(unittest.TestCase):
 
         self.assertEqual(result.candidate_count, 20)
         self.assertEqual(result.relevant_count, 8)
+        self.assertGreaterEqual(result.persistent_identifier_rate, 0.95)
+        self.assertEqual(result.identity_contract_coverage, 1.0)
+        self.assertLess(result.duplicate_identity_rate, 0.02)
         self.assertGreaterEqual(result.precision_at_5, 0.8)
         self.assertEqual(result.keyword_baseline_precision_at_5, 0.6)
         self.assertGreater(result.precision_at_5, result.keyword_baseline_precision_at_5)

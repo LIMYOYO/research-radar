@@ -54,6 +54,48 @@ def candidate(
 
 
 class RankingAndReportingTests(unittest.TestCase):
+    def test_provider_full_text_is_not_reported_as_a_local_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            copy_fixture(root)
+            snapshot = ingest_project(root)
+            paper = candidate(
+                "doi:10.5555/provider-only",
+                "Strategic Review Manipulation in Platform Recommendation",
+                "A platform learns while sellers manipulate review signals.",
+            )
+            paper = Candidate.from_dict(
+                {**paper.to_dict(), "access_status": "full-text"}
+            )
+
+            ranked = rank_candidates(snapshot, [paper])
+
+            self.assertEqual(ranked[0].candidate.local_access_status, "none")
+            self.assertIn("metadata provider reports", ranked[0].evidence_note)
+            self.assertNotIn("local full-text file", ranked[0].evidence_note)
+            manifest = {
+                "search_from": "2026-08-01",
+                "search_to": "2026-08-21",
+                "queries": ["platform learning"],
+                "adapter_status": {"test": "ok"},
+                "errors": [],
+                "candidate_count": 1,
+            }
+            report = write_briefing(
+                root,
+                project_name=snapshot.profile.project_name,
+                project_fingerprint=snapshot.fingerprint,
+                ranked=ranked,
+                manifest=manifest,
+                top_n=5,
+            )
+            content = report.path.read_text(encoding="utf-8")
+            self.assertIn(
+                "`full-text` / `none` / `abstract`",
+                content,
+            )
+            self.assertIn("research-radar access acquire", content)
+
     def test_hard_wrapped_exclusion_does_not_create_generic_mini_rules(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

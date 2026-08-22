@@ -10,6 +10,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Iterable
 
+from .access import paper_filename
 from .config import load_config
 from .discovery import Candidate
 from .project import ProjectSnapshot
@@ -156,13 +157,34 @@ def load_local_access(project: str | Path) -> dict[str, dict[str, Any]]:
     return records
 
 
-def _with_access(candidate: Candidate, records: dict[str, dict[str, Any]]) -> Candidate:
+def _with_access(
+    candidate: Candidate,
+    records: dict[str, dict[str, Any]],
+    *,
+    project: str | Path,
+) -> Candidate:
     if not candidate.doi or candidate.doi not in records:
-        return candidate
+        return replace(candidate, local_access_status="none")
     record = records[candidate.doi]
-    if record.get("codex_eligible"):
-        return replace(candidate, access_status="full-text")
-    return candidate
+    root = Path(project).expanduser().resolve()
+    relative_pdf = record.get("file")
+    if not record.get("codex_eligible") or not isinstance(relative_pdf, str):
+        return replace(candidate, local_access_status="none")
+    pdf_path = (root / relative_pdf).resolve()
+    try:
+        pdf_path.relative_to(root)
+    except ValueError:
+        return replace(candidate, local_access_status="none")
+    if not pdf_path.is_file():
+        return replace(candidate, local_access_status="none")
+    text_path = (
+        root
+        / ".research-radar"
+        / "texts"
+        / f"{Path(paper_filename(candidate.doi)).stem}.txt"
+    )
+    local_status = "text" if text_path.is_file() and text_path.stat().st_size > 0 else "pdf"
+    return replace(candidate, local_access_status=local_status)
 
 
 def rank_candidates(
@@ -200,7 +222,11 @@ def rank_candidates(
 
     ranked: list[RankedCandidate] = []
     for original in candidates:
-        candidate = _with_access(original, local_access)
+        candidate = _with_access(
+            original,
+            local_access,
+            project=snapshot.project_root,
+        )
         candidate_terms = tokens(f"{candidate.title} {candidate.abstract or ''}")
         matched = candidate_terms & topical_terms
         scores = {
@@ -264,11 +290,18 @@ def rank_candidates(
             f"Matched project concepts: {concept_text}. Discovery evidence: {lane_text}. "
             f"The baseline classifies the relationship as {relationship}."
         )
-        evidence_note = (
-            "A local full-text file is available; this baseline card still uses indexed metadata/abstract until full-text distillation runs."
-            if candidate.access_status == "full-text" and candidate.evidence_level != "full-text"
-            else f"Distillation evidence level: {candidate.evidence_level}."
-        )
+        if candidate.local_access_status in {"pdf", "text"} and candidate.evidence_level != "full-text":
+            evidence_note = (
+                f"Verified local {candidate.local_access_status} is available; this baseline "
+                "card still uses indexed metadata/abstract until full-text distillation runs."
+            )
+        elif candidate.access_status == "full-text" and candidate.evidence_level != "full-text":
+            evidence_note = (
+                "A metadata provider reports a full-text route, but no verified local PDF "
+                "has been imported; this card uses indexed metadata/abstract only."
+            )
+        else:
+            evidence_note = f"Distillation evidence level: {candidate.evidence_level}."
         ranked.append(
             RankedCandidate(
                 candidate=candidate,
@@ -302,9 +335,6 @@ def apply_distillations(
         candidate = replace(
             item.candidate,
             evidence_level=evidence_level,
-            access_status=(
-                "full-text" if evidence_level == "full-text" else item.candidate.access_status
-            ),
         )
         action = str(payload["recommended_action"])
         scores = dict(item.scores)

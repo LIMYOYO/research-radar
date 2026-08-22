@@ -18,6 +18,7 @@
         "url": "https://doi.org/10.5555/gold.001",
         "discovered_by": ["openalex:forward-citations"],
         "access_status": "abstract",
+        "local_access_status": "none",
         "evidence_level": "abstract",
         "cited_by_count": 1,
         "publication_date": "2026-08-01"
@@ -39,6 +40,7 @@
         "url": "https://doi.org/10.5555/gold.002",
         "discovered_by": ["openalex:related"],
         "access_status": "abstract",
+        "local_access_status": "none",
         "evidence_level": "abstract",
         "cited_by_count": 0,
         "publication_date": "2026-07-15"
@@ -60,6 +62,7 @@
         "url": "https://doi.org/10.5555/gold.003",
         "discovered_by": ["openalex:forward-citations"],
         "access_status": "abstract",
+        "local_access_status": "none",
         "evidence_level": "abstract",
         "cited_by_count": 4,
         "publication_date": "2025-12-10"
@@ -81,6 +84,7 @@
         "url": "https://doi.org/10.5555/gold.004",
         "discovered_by": ["openalex:related"],
         "access_status": "abstract",
+        "local_access_status": "none",
         "evidence_level": "abstract",
         "cited_by_count": 8,
         "publication_date": "2025-11-01"
@@ -102,6 +106,7 @@
         "url": "https://doi.org/10.5555/gold.005",
         "discovered_by": ["openalex:related"],
         "access_status": "abstract",
+        "local_access_status": "none",
         "evidence_level": "abstract",
         "cited_by_count": 0,
         "publication_date": "2026-06-20"
@@ -123,6 +128,7 @@
         "url": "https://doi.org/10.5555/gold.006",
         "discovered_by": ["openalex:forward-citations"],
         "access_status": "abstract",
+        "local_access_status": "none",
         "evidence_level": "abstract",
         "cited_by_count": 10,
         "publication_date": "2024-10-12"
@@ -144,6 +150,7 @@
         "url": "https://doi.org/10.5555/gold.007",
         "discovered_by": ["openalex:forward-citations"],
         "access_status": "abstract",
+        "local_access_status": "none",
         "evidence_level": "abstract",
         "cited_by_count": 1,
         "publication_date": "2026-05-10"
@@ -165,6 +172,7 @@
         "url": "https://doi.org/10.5555/gold.008",
         "discovered_by": ["openalex:related"],
         "access_status": "abstract",
+        "local_access_status": "none",
         "evidence_level": "abstract",
         "cited_by_count": 3,
         "publication_date": "2025-09-02"
@@ -186,6 +194,7 @@
         "url": "https://doi.org/10.5555/gold.009",
         "discovered_by": ["openalex:keywords"],
         "access_status": "abstract",
+        "local_access_status": "none",
         "evidence_level": "abstract",
         "cited_by_count": 0,
         "publication_date": "2026-04-01"
@@ -207,6 +216,7 @@
         "url": "https://doi.org/10.5555/gold.010",
         "discovered_by": ["openalex:related"],
         "access_status": "abstract",
+        "local_access_status": "none",
         "evidence_level": "abstract",
         "cited_by_count": 20,
         "publication_date": "2023-06-01"
@@ -228,6 +238,7 @@
         "url": "https://doi.org/10.5555/gold.011",
         "discovered_by": ["crossref:keywords"],
         "access_status": "abstract",
+        "local_access_status": "none",
         "evidence_level": "abstract",
         "cited_by_count": 0,
         "publication_date": "2026-08-10"
@@ -249,6 +260,7 @@
         "url": "https://doi.org/10.5555/gold.012",
         "discovered_by": ["crossref:keywords"],
         "access_status": "abstract",
+        "local_access_status": "none",
         "evidence_level": "abstract",
         "cited_by_count": 0,
         "publication_date": "2026-07-01"
@@ -270,6 +282,7 @@
         "url": "https://doi.org/10.5555/gold.013",
         "discovered_by": ["crossref:keywords"],
         "access_status": "abstract",
+        "local_access_status": "none",
         "evidence_level": "abstract",
         "cited_by_count": 0,
         "publication_date": "2026-06-01"
@@ -291,6 +304,7 @@
         "url": "https://doi.org/10.5555/gold.014",
         "discovered_by": ["openalex:keywords"],
         "access_status": "full-text",
+        "local_access_status": "none",
         "evidence_level": "abstract",
         "cited_by_count": 12,
         "publication_date": "2025-11-10"
@@ -312,6 +326,7 @@
         "url": "https://doi.org/10.5555/gold.015",
         "discovered_by": ["crossref:keywords"],
         "access_status": "abstract",
+        "local_access_status": "none",
         "evidence_level": "abstract",
         "cited_by_count": 0,
         "publication_date": "2026-05-01"
@@ -333,6 +348,7 @@
         "url": "https://doi.org/10.5555/gold.016",
         "discovered_by": ["crossref:keywords"],
         "access_status": "abstract",
+        "local_access_status": "none",
         "evidence_level": "abstract",
         "cited_by_count": 0,
         "publication_date": "2026-04-10"
@@ -354,6 +370,7 @@
         "url": "https://doi.org/10.5555/gold.017",
         "discovered_by": ["openalex:keywords"],
         "access_status": "abstract",
+        "local_access_status": "none",
         "evidence_level": "abstract",
         "cited_by_count": 2,
         "publication_date": "2025-10-01"
@@ -375,6 +392,7 @@
         "url": "https://doi.org/10.5555/gold.018",
         "discovered_by": ["crossref:keywords"],
         "access_status": "abstract",
+        "local_access_status": "none",
         "evidence_level": "abstract",
         "cited_by_count": 0,
         "publication_date": "2026-03-01"
@@ -396,6 +414,7 @@
         "url": "https://doi.org/10.5555/gold.019",
         "discovered_by": ["crossref:keywords"],
         "access_status": "metadata-only",
+        "local_access_status": "none",
         "evidence_level": "metadata",
         "cited_by_count": 0,
         "publication_date": "2025-08-01"
@@ -417,6 +436,7 @@
         "url": "https://doi.org/10.5555/gold.020",
         "discovered_by": ["crossref:keywords"],
         "access_status": "abstract",
+        "local_access_status": "none",
         "evidence_level": "abstract",
         "cited_by_count": 1,
         "publication_date": "2026-02-01"

@@ -55,6 +55,7 @@ class Candidate:
     publication_date: str | None = None
     semantic_scholar_id: str | None = None
     identity_status: str = "persistent"
+    local_access_status: str = "none"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -64,6 +65,9 @@ class Candidate:
         normalized = dict(value)
         normalized["authors"] = tuple(normalized.get("authors") or ())
         normalized["discovered_by"] = tuple(normalized.get("discovered_by") or ())
+        # Version-1 candidate records predate explicit local-content state.
+        # A provider availability flag must never be promoted to local access.
+        normalized.setdefault("local_access_status", "none")
         return cls(**normalized)
 
 

@@ -29,6 +29,7 @@ def _digest_item(item: RankedCandidate) -> dict[str, object]:
         "scores": item.scores,
         "matched_concepts": item.matched_concepts,
         "access_status": item.candidate.access_status,
+        "local_access_status": item.candidate.local_access_status,
         "evidence_level": item.candidate.evidence_level,
         "evidence_note": item.evidence_note,
         "relationship": item.relationship,
@@ -93,7 +94,7 @@ def render_briefing(
                 f"- **Signal:** {item.recommended_action}; score {item.score:.3f}; relationship `{item.relationship}`",
                 f"- **Metadata:** {authors}; {paper.venue or 'venue unavailable'}; {paper.year or 'year unavailable'}",
                 f"- **Identity:** `{paper.identity}`",
-                f"- **Access/evidence:** `{paper.access_status}` / `{paper.evidence_level}`",
+                f"- **Provider availability/local content/evidence used:** `{paper.access_status}` / `{paper.local_access_status}` / `{paper.evidence_level}`",
                 f"- **Found through:** {', '.join(paper.discovered_by)}",
                 f"- **Why it matters:** {item.why_it_matters}",
                 f"- **Distillation:** {item.distillation}",
@@ -101,7 +102,7 @@ def render_briefing(
                 f"- **Score trace:** " + ", ".join(f"{name}={value:.3f}" for name, value in item.scores.items()),
             ]
         )
-        if paper.doi and paper.access_status != "full-text":
+        if paper.doi and paper.local_access_status == "none":
             lines.append(
                 f"- **Access next step:** `research-radar access acquire {paper.doi} --project .`"
             )
@@ -239,7 +240,7 @@ def render_weekly(
                 "",
                 f"- **Action/relationship:** `{item.recommended_action}` / `{item.relationship}`; score {item.score:.3f}",
                 f"- **Why it matters:** {item.why_it_matters}",
-                f"- **Evidence:** `{paper.evidence_level}`; access `{paper.access_status}`",
+                f"- **Evidence:** `{paper.evidence_level}`; provider availability `{paper.access_status}`; local content `{paper.local_access_status}`",
                 f"- **Distillation:** {item.distillation}",
                 "",
             ]
@@ -261,7 +262,9 @@ def render_weekly(
         "- Feedback: "
         + (", ".join(f"{name} ({count})" for name, count in feedback_counts.most_common()) or "none recorded")
     )
-    unresolved = [item for item in visible if item.candidate.access_status != "full-text"]
+    unresolved = [
+        item for item in visible if item.candidate.local_access_status == "none"
+    ]
     lines.extend(["", "## Full-text queue", ""])
     if not unresolved:
         lines.append("No high-signal item is waiting for full text.")

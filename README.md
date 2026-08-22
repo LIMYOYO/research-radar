@@ -245,6 +245,11 @@ variant. Installation and the complete browser-assisted test are documented in
 [`docs/access-first.md`](docs/access-first.md). A repository-scoped, manually
 invoked skill is included in the repository.
 
+Briefings distinguish three states that must not be conflated: provider-reported
+availability, verified local content (`none`, `pdf`, or exported `text`), and the
+evidence actually used for the card (`metadata`, `abstract`, or `full-text`). A
+provider PDF link alone never means that a local file exists or was read.
+
 The first real U of T/INFORMS validation is recorded in
 [`docs/access-validation-2026-08-21.md`](docs/access-validation-2026-08-21.md).
 It confirms successful institutional PDF acquisition and also shows why access

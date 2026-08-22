@@ -67,6 +67,11 @@ requested DOI, a local PDF path, a local text path, page count, checksum, and
 `codex_eligible: true` in the ledger. A link label, browser viewer, or provider
 availability flag alone is insufficient.
 
+In a briefing, interpret `access_status` only as provider-reported availability.
+Use `local_access_status` to decide whether verified local content exists, and
+`evidence_level` to decide what claims the card supports. Never rewrite
+provider availability as local access.
+
 Treat discovery and evidence as separate:
 
 - `metadata` supports bibliographic claims only.

@@ -72,6 +72,27 @@ Review the first few scheduled runs and tune `top_n`, keywords, venues, and
 exclusions in `.research-radar/config.yaml`. Pause the task if the selected
 project is moved or the virtual environment is removed.
 
+## macOS metadata-only fallback
+
+If the ChatGPT desktop Scheduled interface is unavailable, macOS `launchd` can
+still run the deterministic metadata pipeline every day. Copy
+`launchd/com.example.research-radar.daily.plist` to `~/Library/LaunchAgents/`,
+replace the absolute paths and label, then bootstrap it with `launchctl`.
+Calendar intervals use the Mac's configured time zone. The bundled
+`scripts/run-daily.sh` prevents overlapping runs, validates the project first,
+and treats partial provider coverage as a usable report rather than a hard
+scheduler failure.
+
+macOS privacy controls can deny LaunchAgents access to protected locations such
+as `Documents`, `Desktop`, or cloud-synced folders even when an interactive
+terminal can read them. Use this fallback only when both repositories live in a
+non-protected path and confirm a manual `launchctl kickstart` succeeds. Do not
+grant broad Full Disk Access merely to make this fallback work.
+
+This fallback writes reports locally but does not create a ChatGPT conversation
+or notification. Use the desktop Scheduled task above when an agent-authored
+brief and interactive PDF follow-up are required.
+
 Run `research-radar weekly --project .` in a separate weekly task if a synthesis
 of recurring concepts, relationships, venues, and unresolved full-text items is
 useful. `SEMANTIC_SCHOLAR_API_KEY` is optional; if supplied through the task

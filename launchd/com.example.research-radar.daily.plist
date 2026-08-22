@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.example.research-radar.daily</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>/absolute/path/to/research-radar/scripts/run-daily.sh</string>
+    <string>/absolute/path/to/research-project</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>8</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>/absolute/path/to/research-project/.research-radar/logs/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/absolute/path/to/research-project/.research-radar/logs/launchd.err.log</string>
+</dict>
+</plist>

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import re
+from collections import Counter
 from dataclasses import asdict, dataclass, replace
 from datetime import date
 from pathlib import Path
@@ -12,8 +13,8 @@ from typing import Any, Iterable
 
 from .access import paper_filename
 from .config import load_config
-from .discovery import Candidate
-from .project import ProjectSnapshot
+from .discovery import Candidate, profile_queries
+from .project import ProjectSnapshot, normalize_title
 
 
 STOPWORDS = {
@@ -54,8 +55,14 @@ def tokens(text: str) -> set[str]:
     }
 
 
-def _profile_exclusion_phrases(text: str) -> list[set[str]]:
-    """Parse semantic exclusion clauses without treating Markdown wraps as clauses."""
+def _profile_exclusion_rules(text: str) -> list[tuple[set[str], set[str], float]]:
+    """Parse exclusion targets and the conditions that rescue a candidate.
+
+    Clauses such as ``generic X with no Y`` or ``X unless Y`` mean that X is
+    unwanted only when Y is absent. Keeping the two sides separate prevents
+    positive exception terms such as ``responders`` or ``retrieval`` from
+    becoming exclusion keywords themselves.
+    """
     blocks: list[str] = []
     current: list[str] = []
 
@@ -77,19 +84,79 @@ def _profile_exclusion_phrases(text: str) -> list[set[str]]:
         current.append(line)
     flush()
 
-    phrases: list[set[str]] = []
+    rules: list[tuple[set[str], set[str], float]] = []
     for block in blocks:
         for clause in re.split(r"[;.!?]+", block):
-            phrase = tokens(clause)
-            if phrase:
-                phrases.append(phrase)
-    return phrases
+            parts = re.split(
+                r"\b(?:without|with\s+no|that\s+do\s+not|unless)\b",
+                clause,
+                maxsplit=1,
+                flags=re.IGNORECASE,
+            )
+            target = tokens(parts[0])
+            rescue = tokens(parts[1]) if len(parts) == 2 else set()
+            if target:
+                # Free-form prose is semantically rich and should require a
+                # strong target match before causing hard suppression.
+                rules.append((target, rescue, 0.50))
+    return rules
 
 
 def _overlap(left: set[str], right: set[str]) -> float:
     if not left or not right:
         return 0.0
     return len(left & right) / math.sqrt(len(left) * len(right))
+
+
+def _phrase_fit(candidate_text: str, phrases: Iterable[str]) -> float:
+    """Reward coverage of a few project-authored multiword watch phrases."""
+    candidate_terms = tokens(candidate_text)
+    candidate_sequence = " ".join(
+        token
+        for token in re.findall(r"[a-z][a-z0-9]{2,}", candidate_text.lower().replace("-", " "))
+        if token not in STOPWORDS
+    )
+    matches: list[float] = []
+    for raw_phrase in phrases:
+        phrase = tokens(raw_phrase)
+        if not phrase:
+            continue
+        phrase_sequence = " ".join(
+            token
+            for token in re.findall(
+                r"[a-z][a-z0-9]{2,}", raw_phrase.lower().replace("-", " ")
+            )
+            if token not in STOPWORDS
+        )
+        if phrase_sequence and phrase_sequence in candidate_sequence:
+            matches.append(1.0)
+            continue
+        coverage = len(candidate_terms & phrase) / len(phrase)
+        if coverage <= 0:
+            continue
+        specificity = min(1.0, len(phrase) / 3.0)
+        # Partial overlap with a multiword watch phrase is common noise (for
+        # example, "public access" without "defibrillator"). Cubing coverage
+        # rewards near-complete phrase matches while sharply discounting those
+        # generic fragments.
+        matches.append(0.25 * (coverage**3) * specificity)
+    strongest = sorted(matches, reverse=True)[:3]
+    return sum(strongest) / len(strongest) if strongest else 0.0
+
+
+def _watch_vocabulary_fit(candidate_terms: set[str], phrases: Iterable[str]) -> float:
+    """Measure overlap with concepts repeated across researcher watch phrases."""
+    frequencies = Counter(
+        term
+        for phrase in phrases
+        for term in tokens(phrase)
+    )
+    if not frequencies:
+        return 0.0
+    weights = {term: count * count for term, count in frequencies.items()}
+    denominator = sum(sorted(weights.values(), reverse=True)[:5]) or 1
+    matched = sum(weight for term, weight in weights.items() if term in candidate_terms)
+    return min(1.0, matched / denominator)
 
 
 def _recency(year: int | None) -> float:
@@ -211,13 +278,18 @@ def rank_candidates(
     venue_line = re.search(r"(?im)^\s*[-*]?\s*venues?(?:\s+or\s+working-paper\s+series)?\s*:\s*(.+)$", watch_section)
     if venue_line:
         watched_venues.extend(item.strip() for item in venue_line.group(1).split(","))
-    exclusion_phrases: list[set[str]] = []
+    watch_phrases = list(profile_queries(snapshot, config))
+    seed_titles = {
+        normalize_title(seed.title) for seed in snapshot.seeds if seed.title
+    }
+    exclusion_rules: list[tuple[set[str], set[str], float]] = []
     for item in config.get("exclude", {}).get("keywords", []):
         phrase = tokens(str(item))
         if phrase:
-            exclusion_phrases.append(phrase)
-    exclusion_phrases.extend(
-        _profile_exclusion_phrases(snapshot.profile.sections.get("exclude", ""))
+            # Explicit config entries are deliberate machine-readable rules.
+            exclusion_rules.append((phrase, set(), 0.30))
+    exclusion_rules.extend(
+        _profile_exclusion_rules(snapshot.profile.sections.get("exclude", ""))
     )
 
     ranked: list[RankedCandidate] = []
@@ -232,6 +304,12 @@ def rank_candidates(
         scores = {
             "topical_fit": _overlap(candidate_terms, topical_terms),
             "structural_fit": _overlap(candidate_terms, structural_terms),
+            "watch_phrase_fit": _phrase_fit(
+                f"{candidate.title} {candidate.abstract or ''}", watch_phrases
+            ),
+            "watch_vocabulary_fit": _watch_vocabulary_fit(
+                candidate_terms, watch_phrases
+            ),
             "citation_relation": _lane_score(candidate.discovered_by),
             "recency": _recency(candidate.year),
             "venue_prior": _venue_score(candidate.venue, watched_venues),
@@ -245,7 +323,12 @@ def rank_candidates(
             ),
             default=0.0,
         )
-        fit = max(scores["topical_fit"], scores["structural_fit"])
+        scores["seed_similarity"] = closest_seed_overlap
+        fit = max(
+            scores["topical_fit"],
+            scores["structural_fit"],
+            scores["watch_phrase_fit"],
+        )
         scores["novelty"] = max(0.0, 1.0 - closest_seed_overlap) * fit
         scores["priority_risk"] = min(
             1.0,
@@ -254,26 +337,74 @@ def rank_candidates(
             * max(scores["citation_relation"], 0.25)
             * max(scores["recency"], 0.25),
         )
-        base = (
-            0.27 * scores["structural_fit"]
-            + 0.23 * scores["topical_fit"]
-            + 0.18 * scores["citation_relation"]
-            + 0.08 * scores["recency"]
-            + 0.04 * scores["venue_prior"]
-            + 0.08 * scores["evidence"]
-            + 0.04 * scores["novelty"]
-            + 0.08 * scores["priority_risk"]
+        if len(watch_phrases) >= 6:
+            base = 2.0 * (
+                0.18 * scores["structural_fit"]
+                + 0.45 * scores["topical_fit"]
+                + 0.07 * scores["watch_phrase_fit"]
+                + 0.18 * scores["watch_vocabulary_fit"]
+                + 0.03 * scores["citation_relation"]
+                + 0.02 * scores["recency"]
+                + 0.02 * scores["venue_prior"]
+                + 0.02 * scores["evidence"]
+                + 0.01 * scores["novelty"]
+                + 0.02 * scores["priority_risk"]
+            )
+        else:
+            base = (
+                0.27 * scores["structural_fit"]
+                + 0.23 * scores["topical_fit"]
+                + 0.18 * scores["citation_relation"]
+                + 0.08 * scores["recency"]
+                + 0.04 * scores["venue_prior"]
+                + 0.08 * scores["evidence"]
+                + 0.04 * scores["novelty"]
+                + 0.08 * scores["priority_risk"]
+            )
+        # Citation neighborhoods are intentionally high recall. Require some
+        # independent project anchor before allowing a citation edge alone to
+        # dominate the shortlist. This especially controls forward citations
+        # of broad methodological or application seeds.
+        scores["anchor_penalty"] = (
+            max(
+                0.0,
+                0.08
+                * (
+                    1.0
+                    - 4.0 * scores["watch_phrase_fit"]
+                    - 2.0 * scores["watch_vocabulary_fit"]
+                    - 3.0 * scores["structural_fit"]
+                ),
+            )
+            if len(watch_phrases) >= 6
+            else 0.0
         )
+        scores["keyword_lane_penalty"] = (
+            0.12
+            if set(candidate.discovered_by) == {"crossref:keywords"}
+            and scores["watch_phrase_fit"] < 0.50
+            else 0.0
+        )
+        base -= scores["anchor_penalty"] + scores["keyword_lane_penalty"]
         feedback_item = feedback.get(candidate.identity, {})
         label = str(feedback_item.get("label") or "")
-        suppression_reason = None
+        suppression_reason = (
+            "already-in-bibliography"
+            if normalize_title(candidate.title) in seed_titles
+            else None
+        )
         if label in SUPPRESS_LABELS:
             suppression_reason = f"feedback:{label}"
         exclusion_matches: list[tuple[float, set[str]]] = []
-        for phrase in exclusion_phrases:
-            hits = phrase & candidate_terms
-            coverage = len(hits) / len(phrase)
-            if len(hits) >= 2 and coverage >= 0.30:
+        for target, rescue, minimum_coverage in exclusion_rules:
+            hits = target & candidate_terms
+            coverage = len(hits) / len(target)
+            rescue_coverage = len(rescue & candidate_terms) / len(rescue) if rescue else 0.0
+            if (
+                len(hits) >= 2
+                and coverage >= minimum_coverage
+                and rescue_coverage < 0.60
+            ):
                 exclusion_matches.append((coverage, hits))
         if exclusion_matches and scores["structural_fit"] < 0.25:
             _, best_hits = max(exclusion_matches, key=lambda item: item[0])

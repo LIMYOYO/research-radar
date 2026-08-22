@@ -20,12 +20,12 @@ Run from the repository root:
 
 Observed on 2026-08-21:
 
-- 53 tests passed;
+- 58 tests passed;
 - all source and test modules compiled;
 - the repository skill validated;
 - a version 0.2.0 wheel installed and initialized a project in a fresh Python
   3.9 virtual environment;
-- Research Radar precision@5/10 was 1.00/1.00 on the 20-paper synthetic fixture,
+- Research Radar precision@5/10 was 1.00/0.80 on the 20-paper synthetic fixture,
   versus 0.60/0.70 for the title-and-abstract keyword baseline;
 - the same fixture had 100% persistent identifiers, 100% explicit identity
   contract coverage, and a 0% duplicate-identity rate;
@@ -52,7 +52,7 @@ invocation from silently searching on a generic repository description.
 | M0 specification | Engineering fixtures complete; user validation pending | Schemas, synthetic project, feedback vocabulary, and 20 judged candidates exist. An open-source-safe fixture now preserves the nested/multi-file dependency shapes observed in private projects while replacing every substantive field. Confirmation that two researchers can fill the profile without help remains external. |
 | M1 ingestion | Complete for the tested scope | TeX dependencies, referenced BibTeX files, 20 DOI normalization cases, DOI/arXiv identities, explicit title-fallback status, malformed-BibTeX diagnostics, duplicates, fingerprints, SQLite migration, idempotence, explicit profile-change approval, and rejection of generic READMEs as research profiles are tested. |
 | M2 discovery | Complete for the local beta | Crossref, OpenAlex, and Semantic Scholar run behind isolated adapters. Forward citations, related works, backward references, keywords, authors, venues, INFORMS/UTD24 presets, deduplication, caching, retry, provenance, and partial failures are implemented. Provider coverage remains inherently incomplete. |
-| M4 distillation/ranking | Engineering contract complete; researcher calibration pending | Typed JSON validation, evidence gating, append-only storage, report hydration, paper-type guidance, explainable feature traces, and keyword-baseline lift are implemented. A real 20-paper-per-project calibration set is still required. |
+| M4 distillation/ranking | First real-project calibration implemented; researcher confirmation pending | Typed JSON validation, evidence gating, append-only storage, report hydration, paper-type guidance, explainable feature traces, and honest keyword-baseline comparison are implemented. A private 41-paper provisional MobileAED judgment set now measures precision@5/10 at 1.00/1.00; its labels still require researcher confirmation, and a second real-project set remains external. |
 | M5 reports/feedback | Complete for deterministic local use | Incremental delta, no-change behavior, feedback suppression, audit manifests, weekly synthesis, and full-text queue are tested. Repeated same-window runs are idempotent. |
 | M6 skill/manual invocation | Complete for the local beta | The skill validates, MobileAED passes project checks and has completed a live run, and incomplete profiles stop before network work or state persistence. The workflow deliberately creates no background schedule. |
 | M7 sharing | Public beta published; external validation pending | The public repository is available at `https://github.com/LIMYOYO/research-radar`; its first GitHub Actions test run passed. Wheel installation, docs, schemas, three profile examples, privacy guidance, issue template, contribution guide, changelog, and plugin evaluation exist. Two external onboarding reports do not yet exist. |

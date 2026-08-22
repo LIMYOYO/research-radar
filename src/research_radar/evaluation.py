@@ -11,6 +11,7 @@ from typing import Any
 from .discovery import Candidate
 from .project import ingest_project
 from .ranking import RankedCandidate, rank_candidates, tokens
+from .state import load_candidates
 
 
 @dataclass(frozen=True)
@@ -36,7 +37,11 @@ def _precision(ranked: list[RankedCandidate], relevant: set[str], k: int) -> flo
     top = ranked[:k]
     if not top:
         return 0.0
-    return sum(item.candidate.identity in relevant for item in top) / len(top)
+    # Do not let an overly aggressive visibility threshold inflate precision by
+    # emitting fewer than k papers. When at least k judged papers exist, the
+    # denominator remains k.
+    denominator = k if len(ranked) >= k else len(top)
+    return sum(item.candidate.identity in relevant for item in top) / denominator
 
 
 def _keyword_precision(
@@ -74,21 +79,55 @@ def evaluate_fixture(
     snapshot = ingest_project(project)
     payload = json.loads(Path(fixture).read_text(encoding="utf-8"))
     cases = payload.get("candidates")
+    if cases is None and isinstance(payload.get("judgments"), list):
+        stored = {
+            str(candidate.get("identity")): candidate
+            for candidate in load_candidates(project)
+            if candidate.get("identity")
+        }
+        cases = []
+        missing: list[str] = []
+        for judgment in payload["judgments"]:
+            if not isinstance(judgment, dict):
+                raise ValueError("Each project judgment must be an object.")
+            identity = str(judgment.get("identity") or "")
+            candidate = stored.get(identity)
+            if candidate is None:
+                missing.append(identity or "<missing identity>")
+                continue
+            cases.append(
+                {
+                    "candidate": candidate,
+                    "judgment": judgment.get("judgment"),
+                }
+            )
+        if missing:
+            raise ValueError(
+                "Judgment identities are absent from project state: "
+                + ", ".join(missing)
+            )
     if not isinstance(cases, list) or not cases:
-        raise ValueError("Evaluation fixture must contain a non-empty candidates list.")
+        raise ValueError(
+            "Evaluation fixture must contain a non-empty candidates or judgments list."
+        )
 
     candidates: list[Candidate] = []
     relevant: set[str] = set()
     for case in cases:
         if not isinstance(case, dict) or not isinstance(case.get("candidate"), dict):
             raise ValueError("Each evaluation case must contain a candidate object.")
+        if case.get("judgment") not in {"relevant", "borderline", "irrelevant"}:
+            raise ValueError(
+                "Each evaluation judgment must be relevant, borderline, or irrelevant."
+            )
         candidate = Candidate.from_dict(case["candidate"])
         candidates.append(candidate)
         if case.get("judgment") == "relevant":
             relevant.add(candidate.identity)
 
     ranked = rank_candidates(snapshot, candidates)
-    visible = [item for item in ranked if not item.suppressed and item.recommended_action != "weak"]
+    eligible = [item for item in ranked if not item.suppressed]
+    visible = [item for item in eligible if item.recommended_action != "weak"]
     found_relevant = sum(item.candidate.identity in relevant for item in visible)
     first_relevant_rank = next(
         (index for index, item in enumerate(visible, start=1) if item.candidate.identity in relevant),
@@ -103,8 +142,8 @@ def evaluate_fixture(
             ]
         )
     )
-    precision_at_5 = _precision(visible, relevant, 5)
-    precision_at_10 = _precision(visible, relevant, 10)
+    precision_at_5 = _precision(eligible, relevant, 5)
+    precision_at_10 = _precision(eligible, relevant, 10)
     baseline_at_5 = _keyword_precision(candidates, relevant, project_terms, 5)
     baseline_at_10 = _keyword_precision(candidates, relevant, project_terms, 10)
     unique_identities = {candidate.identity for candidate in candidates}

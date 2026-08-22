@@ -122,6 +122,31 @@ class RankingAndReportingTests(unittest.TestCase):
 
             self.assertFalse(ranked[0].suppressed)
 
+    def test_exclusion_exception_terms_rescue_a_relevant_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            copy_fixture(root)
+            profile = root / "RESEARCH_PROFILE.md"
+            profile.write_text(
+                profile.read_text(encoding="utf-8").replace(
+                    "Pure sentiment-classification papers without platform decisions;",
+                    "Suppress generic facility-location heuristics that do not model "
+                    "responders or retrieval;",
+                ),
+                encoding="utf-8",
+            )
+            snapshot = ingest_project(root)
+            relevant = candidate(
+                "doi:10.5555/retrieval",
+                "Facility Location with Responders and Retrieval",
+                "We model responder availability and two-leg retrieval for emergency delivery.",
+                lane="openalex:forward-citations",
+            )
+
+            ranked = rank_candidates(snapshot, [relevant])
+
+            self.assertFalse(ranked[0].suppressed)
+
     def test_structurally_relevant_candidate_ranks_above_lexical_noise(self) -> None:
         snapshot = ingest_project(FIXTURE)
         relevant = candidate(
@@ -144,6 +169,20 @@ class RankingAndReportingTests(unittest.TestCase):
         self.assertIn("novelty", ranked[0].scores)
         self.assertIn("priority_risk", ranked[0].scores)
         self.assertTrue(ranked[1].suppressed)
+
+    def test_bibliography_title_is_suppressed_even_when_provider_identity_differs(self) -> None:
+        snapshot = ingest_project(FIXTURE)
+        seed = snapshot.seeds[0]
+        known = candidate(
+            "doi:10.5555/provider-added-doi",
+            seed.title or "missing title",
+            "The provider resolved a DOI that was absent from the local bibliography.",
+        )
+
+        ranked = rank_candidates(snapshot, [known])
+
+        self.assertTrue(ranked[0].suppressed)
+        self.assertEqual(ranked[0].suppression_reason, "already-in-bibliography")
 
     def test_feedback_suppresses_candidate_and_report_is_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

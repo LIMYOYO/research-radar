@@ -14,6 +14,7 @@ from research_radar.discovery import (
     discover,
     merge_candidates,
     profile_queries,
+    profile_watch_items,
     SemanticScholarAdapter,
     _author_watch_match,
     _venue_watch_match,
@@ -268,6 +269,31 @@ class DiscoveryTests(unittest.TestCase):
             queries,
             ("How should a platform split B between pricing and recommendations?",),
         )
+
+    def test_wrapped_watch_fields_include_continuation_lines(self) -> None:
+        snapshot = ingest_project(FIXTURE)
+        sections = dict(snapshot.profile.sections)
+        sections["watch"] = (
+            "- Keywords: platform learning, dynamic pricing,\n"
+            "  strategic review manipulation, response-time threshold\n"
+            "- Authors: Ada Lovelace,\n"
+            "  Grace Hopper\n"
+            "- Venues or working-paper series: Management Science,\n"
+            "  Operations Research\n"
+        )
+        snapshot = replace(
+            snapshot,
+            profile=replace(snapshot.profile, sections=sections),
+        )
+
+        queries = profile_queries(snapshot, {"watch": {"keywords": []}})
+        authors = profile_watch_items(snapshot, {"watch": {"authors": []}}, "authors")
+        venues = profile_watch_items(snapshot, {"watch": {"venues": []}}, "venues")
+
+        self.assertIn("strategic review manipulation", queries)
+        self.assertIn("response-time threshold", queries)
+        self.assertIn("Grace Hopper", authors)
+        self.assertIn("Operations Research", venues)
 
     def test_watch_results_are_locally_rechecked_after_fuzzy_provider_search(self) -> None:
         candidate = candidate_from_crossref(crossref_item(), "crossref:authors")

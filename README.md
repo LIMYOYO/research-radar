@@ -337,7 +337,7 @@ Run the checked-in 20-candidate offline ranking evaluation with:
 ```
 
 The synthetic fixture currently records Research Radar precision@5/10 of
-1.00/1.00 versus a title-and-abstract keyword baseline of 0.60/0.70, with
+1.00/0.80 versus a title-and-abstract keyword baseline of 0.60/0.70, with
 100% explicit identity-contract coverage and a 0% duplicate-identity rate.
 These are regression checks, not a claim about real-project quality.
 

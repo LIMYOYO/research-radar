@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Separated provider-reported availability from verified local PDF/text state
+  so reports cannot claim that a provider link is a local full-text file.
+- Added continuation-line parsing for project watch keywords, authors, and
+  venues, plus project-anchor scoring for detailed research profiles.
+- Prevented provider-resolved copies of bibliography titles from appearing as
+  new papers and made prose exclusion rules honor their exception conditions.
+- Added private identity-only judgment-set evaluation without copying private
+  candidate metadata into the public repository.
+
 ## 0.2.0 — 2026-08-21
 
 - Switched the execution contract from background scheduling to researcher-

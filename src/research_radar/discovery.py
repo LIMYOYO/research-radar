@@ -586,9 +586,13 @@ def profile_queries(snapshot: ProjectSnapshot, config: dict[str, Any]) -> tuple[
     if isinstance(watched, list):
         queries.extend(plain_query(str(item)) for item in watched if plain_query(str(item)))
     watch_section = snapshot.profile.sections.get("watch", "")
-    keyword_match = re.search(r"(?im)^\s*[-*]?\s*keywords?\s*:\s*(.+)$", watch_section)
-    if keyword_match:
-        queries.extend(plain_query(part) for part in keyword_match.group(1).split(",") if plain_query(part))
+    keyword_value = _watch_field(watch_section, r"keywords?")
+    if keyword_value:
+        queries.extend(
+            plain_query(part)
+            for part in keyword_value.split(",")
+            if plain_query(part)
+        )
     if not queries:
         research_question = snapshot.profile.sections.get("research-question")
         if research_question:
@@ -612,6 +616,29 @@ def profile_queries(snapshot: ProjectSnapshot, config: dict[str, Any]) -> tuple[
     return tuple(dict.fromkeys(queries))
 
 
+def _watch_field(watch_section: str, label: str) -> str | None:
+    """Read one labeled watch-list field including Markdown continuation lines."""
+    lines = watch_section.splitlines()
+    for index, raw_line in enumerate(lines):
+        match = re.match(
+            rf"(?i)^\s*[-*]?\s*{label}\s*:\s*(.*)$",
+            raw_line,
+        )
+        if not match:
+            continue
+        parts = [match.group(1).strip()]
+        for continuation in lines[index + 1 :]:
+            stripped = continuation.strip()
+            if not stripped or stripped.startswith("#"):
+                break
+            if re.match(r"^[-*]\s+[A-Za-z][^:]{0,80}:\s*", stripped):
+                break
+            parts.append(stripped)
+        value = " ".join(part for part in parts if part)
+        return value or None
+    return None
+
+
 def profile_watch_items(
     snapshot: ProjectSnapshot,
     config: dict[str, Any],
@@ -620,12 +647,9 @@ def profile_watch_items(
     items = list(configured_watch(config, kind))
     watch_section = snapshot.profile.sections.get("watch", "")
     label = "authors?" if kind == "authors" else "venues?(?:\\s+or\\s+working-paper\\s+series)?"
-    match = re.search(
-        rf"(?im)^\s*[-*]?\s*{label}\s*:\s*(.+)$",
-        watch_section,
-    )
-    if match:
-        items.extend(part.strip() for part in match.group(1).split(",") if part.strip())
+    value = _watch_field(watch_section, label)
+    if value:
+        items.extend(part.strip() for part in value.split(",") if part.strip())
     return tuple(dict.fromkeys(items))
 
 
@@ -823,10 +847,14 @@ def discover(
     seed_identities = {seed.identity for seed in snapshot.seeds} | {
         seed.identity for seed in effective_seeds
     }
+    seed_titles = {
+        normalize_title(seed.title) for seed in snapshot.seeds if seed.title
+    }
     candidates = tuple(
         candidate
         for candidate in merge_candidates(found)
         if candidate.identity not in seed_identities
+        and normalize_title(candidate.title) not in seed_titles
     )
     return DiscoveryOutcome(
         candidates=candidates,

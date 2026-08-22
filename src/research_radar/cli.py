@@ -38,7 +38,7 @@ from .reporting import write_briefing, write_weekly
 from .resolution import resolve_access
 from .state import (
     FEEDBACK_LABELS,
-    last_successful_search_to,
+    last_successful_search_to_by_adapter,
     latest_distillations,
     latest_feedback,
     load_candidates,
@@ -451,11 +451,15 @@ def main(argv: list[str] | None = None) -> int:
             snapshot = ingest_project(args.project)
             require_profile_ready(snapshot.profile)
             save_snapshot(snapshot)
-            search_from = args.search_from or last_successful_search_to(args.project)
             outcome = discover(
                 snapshot,
-                search_from=search_from,
+                search_from=args.search_from,
                 search_to=args.search_to,
+                search_from_by_source=(
+                    None
+                    if args.search_from
+                    else last_successful_search_to_by_adapter(args.project)
+                ),
                 limit_per_lane=args.limit_per_lane,
             )
             candidate_dicts = [candidate.to_dict() for candidate in outcome.candidates]
@@ -464,12 +468,13 @@ def main(argv: list[str] | None = None) -> int:
                 "search_from": outcome.search_from,
                 "search_to": outcome.search_to,
                 "queries": outcome.queries,
+                "source_windows": outcome.source_windows,
                 "adapter_status": outcome.adapter_status,
                 "errors": outcome.errors,
                 "candidate_count": len(candidate_dicts),
             }
             status = "success" if not outcome.errors else "partial"
-            run_id, newly_seen = save_discovery(
+            run_id, newly_seen, materially_updated = save_discovery(
                 args.project,
                 candidates=candidate_dicts,
                 manifest=manifest,
@@ -482,6 +487,7 @@ def main(argv: list[str] | None = None) -> int:
                         "run_id": run_id,
                         "status": status,
                         "newly_seen": newly_seen,
+                        "materially_updated": len(materially_updated),
                         "candidates": candidate_dicts,
                     },
                     indent=2,
@@ -500,11 +506,15 @@ def main(argv: list[str] | None = None) -> int:
                 for item in load_candidates(args.project)
                 if item.get("identity")
             }
-            search_from = args.search_from or last_successful_search_to(args.project)
             outcome = discover(
                 snapshot,
-                search_from=search_from,
+                search_from=args.search_from,
                 search_to=args.search_to,
+                search_from_by_source=(
+                    None
+                    if args.search_from
+                    else last_successful_search_to_by_adapter(args.project)
+                ),
                 limit_per_lane=args.limit_per_lane,
             )
             candidate_dicts = [candidate.to_dict() for candidate in outcome.candidates]
@@ -513,12 +523,13 @@ def main(argv: list[str] | None = None) -> int:
                 "search_from": outcome.search_from,
                 "search_to": outcome.search_to,
                 "queries": outcome.queries,
+                "source_windows": outcome.source_windows,
                 "adapter_status": outcome.adapter_status,
                 "errors": outcome.errors,
                 "candidate_count": len(candidate_dicts),
             }
             status = "success" if not outcome.errors else "partial"
-            run_id, newly_seen = save_discovery(
+            run_id, newly_seen, materially_updated = save_discovery(
                 args.project,
                 candidates=candidate_dicts,
                 manifest=manifest,
@@ -528,8 +539,10 @@ def main(argv: list[str] | None = None) -> int:
                 candidate
                 for candidate in outcome.candidates
                 if candidate.identity not in prior_identities
+                or candidate.identity in materially_updated
             )
             manifest["new_candidate_count"] = len(new_candidates)
+            manifest["materially_updated_count"] = len(materially_updated)
             ranked = rank_candidates(
                 snapshot,
                 new_candidates,
@@ -552,6 +565,7 @@ def main(argv: list[str] | None = None) -> int:
                         "run_id": run_id,
                         "candidate_count": len(candidate_dicts),
                         "newly_seen": newly_seen,
+                        "materially_updated": len(materially_updated),
                         "report": str(report.path),
                         "report_duplicate": report.duplicate,
                         "shown_count": report.shown_count,

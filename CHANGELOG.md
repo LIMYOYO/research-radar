@@ -10,6 +10,8 @@
   new papers and made prose exclusion rules honor their exception conditions.
 - Added private identity-only judgment-set evaluation without copying private
   candidate metadata into the public repository.
+- Added material-candidate update detection, per-provider successful search
+  watermarks, source-window audit output, and bounded `Retry-After` handling.
 
 ## 0.2.0 — 2026-08-21
 

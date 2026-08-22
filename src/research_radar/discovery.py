@@ -79,6 +79,7 @@ class DiscoveryOutcome:
     search_from: str
     search_to: str
     queries: tuple[str, ...]
+    source_windows: dict[str, dict[str, str]]
 
 
 class HttpJsonClient:
@@ -126,7 +127,21 @@ class HttpJsonClient:
                         encoding="utf-8",
                     )
                 return payload
-            except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+            except HTTPError as exc:
+                error = exc
+                if attempt < self.retries:
+                    retry_after = exc.headers.get("Retry-After") if exc.headers else None
+                    try:
+                        requested_delay = float(retry_after) if retry_after else 0.0
+                    except ValueError:
+                        requested_delay = 0.0
+                    delay = (
+                        min(10.0, max(0.5 * (2**attempt), requested_delay))
+                        if exc.code in {429, 503}
+                        else 0.5 * (2**attempt)
+                    )
+                    time.sleep(delay)
+            except (URLError, TimeoutError, json.JSONDecodeError) as exc:
                 error = exc
                 if attempt < self.retries:
                     time.sleep(0.5 * (2**attempt))
@@ -678,11 +693,29 @@ def _venue_watch_match(candidate: Candidate, watched: str) -> bool:
     return bool(actual and target and (actual == target or target in actual or actual in target))
 
 
+def _published_in_window(
+    candidate: Candidate,
+    *,
+    from_date: str,
+    until_date: str,
+) -> bool:
+    """Filter graph results locally when the provider has no date parameter."""
+    published = candidate.publication_date
+    if not published and candidate.year:
+        published = f"{candidate.year:04d}-01-01"
+    if not published:
+        # Preserve high-recall behavior when the provider omits a date.
+        return True
+    normalized = str(published)[:10]
+    return from_date <= normalized <= until_date
+
+
 def discover(
     snapshot: ProjectSnapshot,
     *,
     search_from: str | None = None,
     search_to: str | None = None,
+    search_from_by_source: dict[str, str] | None = None,
     client: JsonClient | None = None,
     limit_per_lane: int = 20,
 ) -> DiscoveryOutcome:
@@ -691,11 +724,25 @@ def discover(
     config = load_config(root)
     today = date.today()
     search_to = search_to or today.isoformat()
-    search_from = search_from or (today - timedelta(days=int(config.get("lookback_days", 14)))).isoformat()
+    default_search_from = (
+        today - timedelta(days=int(config.get("lookback_days", 14)))
+    ).isoformat()
     if client is None:
         client = HttpJsonClient(cache_dir=root / ".research-radar" / "cache")
 
     sources = set(config.get("sources", []))
+    prior_windows = search_from_by_source or {}
+    source_windows = {
+        source: {
+            "from": search_from or prior_windows.get(source) or default_search_from,
+            "to": search_to,
+        }
+        for source in sorted(sources)
+    }
+    search_from = min(
+        (window["from"] for window in source_windows.values()),
+        default=search_from or default_search_from,
+    )
     lanes = set(config.get("discovery_lanes", []))
     queries = profile_queries(snapshot, config)
     author_queries = profile_watch_items(snapshot, config, "authors")
@@ -710,12 +757,13 @@ def discover(
 
     if "crossref" in sources:
         adapter = CrossrefAdapter(client)
+        source_from = source_windows[adapter.name]["from"]
         resolved_count = 0
         resolution_attempts = 0
         try:
             if "keywords" in lanes:
                 for query in queries:
-                    found.extend(adapter.search(query, from_date=search_from, until_date=search_to, limit=limit_per_lane))
+                    found.extend(adapter.search(query, from_date=source_from, until_date=search_to, limit=limit_per_lane))
             watch_limit = max(0, int(config.get("max_watch_queries", 8)))
             if "authors" in lanes:
                 for author in author_queries[:watch_limit]:
@@ -723,7 +771,7 @@ def discover(
                         candidate
                         for candidate in adapter.search(
                             author,
-                            from_date=search_from,
+                            from_date=source_from,
                             until_date=search_to,
                             limit=limit_per_lane,
                             field="query.author",
@@ -737,7 +785,7 @@ def discover(
                         candidate
                         for candidate in adapter.search(
                             venue,
-                            from_date=search_from,
+                            from_date=source_from,
                             until_date=search_to,
                             limit=limit_per_lane,
                             field="query.container-title",
@@ -761,6 +809,7 @@ def discover(
 
     if "openalex" in sources:
         adapter = OpenAlexAdapter(client)
+        source_from = source_windows[adapter.name]["from"]
         resolved = 0
         openalex_failures = 0
         direct = [
@@ -794,7 +843,7 @@ def discover(
                     found.extend(
                         adapter.citing(
                             work_id,
-                            from_date=search_from,
+                            from_date=source_from,
                             until_date=search_to,
                             limit=limit_per_lane,
                         )
@@ -807,7 +856,7 @@ def discover(
         if "keywords" in lanes:
             for query in queries:
                 try:
-                    found.extend(adapter.search(query, from_date=search_from, until_date=search_to, limit=limit_per_lane))
+                    found.extend(adapter.search(query, from_date=source_from, until_date=search_to, limit=limit_per_lane))
                 except Exception as exc:
                     openalex_failures += 1
                     errors.append(f"{adapter.name} query {query!r}: {exc}")
@@ -820,6 +869,7 @@ def discover(
 
     if "semanticscholar" in sources:
         adapter = SemanticScholarAdapter(client)
+        source_from = source_windows[adapter.name]["from"]
         failures = 0
         queried = 0
         graph_limit = max(0, int(config.get("max_graph_seeds", 8)))
@@ -829,7 +879,15 @@ def discover(
         for seed in graph_seeds:
             try:
                 if "forward-citations" in lanes:
-                    found.extend(adapter.citing(seed, limit=limit_per_lane))
+                    found.extend(
+                        candidate
+                        for candidate in adapter.citing(seed, limit=limit_per_lane)
+                        if _published_in_window(
+                            candidate,
+                            from_date=source_from,
+                            until_date=search_to,
+                        )
+                    )
                 if "reference-neighborhood" in lanes:
                     found.extend(adapter.references(seed, limit=limit_per_lane))
                 queried += 1
@@ -863,4 +921,5 @@ def discover(
         search_from=search_from,
         search_to=search_to,
         queries=queries,
+        source_windows=source_windows,
     )

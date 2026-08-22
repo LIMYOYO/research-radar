@@ -10,6 +10,7 @@ from research_radar.ranking import rank_candidates
 from research_radar.reporting import write_briefing, write_weekly
 from research_radar.state import (
     last_successful_search_to,
+    last_successful_search_to_by_adapter,
     latest_feedback,
     load_candidate_records,
     save_discovery,
@@ -215,6 +216,27 @@ class RankingAndReportingTests(unittest.TestCase):
                 status="success",
             )
             self.assertEqual(last_successful_search_to(root), "2026-08-21")
+            self.assertEqual(
+                last_successful_search_to_by_adapter(root),
+                {"openalex": "2026-08-21"},
+            )
+            save_discovery(
+                root,
+                candidates=[paper.to_dict(), second_paper.to_dict()],
+                manifest={
+                    "search_from": "2026-08-21",
+                    "search_to": "2026-08-22",
+                    "adapter_status": {
+                        "crossref": "ok (0 seed(s) resolved)",
+                        "openalex": "partial (1 failure)",
+                    },
+                },
+                status="partial",
+            )
+            self.assertEqual(
+                last_successful_search_to_by_adapter(root),
+                {"crossref": "2026-08-22", "openalex": "2026-08-21"},
+            )
             save_feedback(root, identity=paper.identity, label="known", note="Already cited")
             ranked = rank_candidates(snapshot, [paper], feedback=latest_feedback(root))
             self.assertTrue(ranked[0].suppressed)
@@ -278,6 +300,43 @@ class RankingAndReportingTests(unittest.TestCase):
             self.assertIn("Pattern synthesis", weekly_content)
             self.assertIn("Full-text queue", weekly_content)
             self.assertIn("research-radar access acquire", weekly_content)
+
+    def test_material_candidate_change_is_returned_for_incremental_reporting(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            copy_fixture(root)
+            snapshot = ingest_project(root)
+            save_snapshot(snapshot)
+            initial = candidate(
+                "doi:10.5555/update",
+                "Marketplace Learning with Strategic Signals",
+                "A short abstract.",
+            )
+            manifest = {"search_from": "2026-08-01", "search_to": "2026-08-21"}
+            _, new_count, updates = save_discovery(
+                root,
+                candidates=[initial.to_dict()],
+                manifest=manifest,
+                status="success",
+            )
+            enriched = Candidate.from_dict(
+                {
+                    **initial.to_dict(),
+                    "abstract": "A materially richer abstract with a new result.",
+                    "access_status": "full-text",
+                }
+            )
+            _, second_new_count, second_updates = save_discovery(
+                root,
+                candidates=[enriched.to_dict()],
+                manifest=manifest,
+                status="success",
+            )
+
+            self.assertEqual(new_count, 1)
+            self.assertFalse(updates)
+            self.assertEqual(second_new_count, 0)
+            self.assertEqual(second_updates, (initial.identity,))
 
 
 if __name__ == "__main__":

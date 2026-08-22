@@ -190,6 +190,8 @@ Deliverables:
 - time-window and `since last-success` semantics;
 - cross-source deduplication and provenance retention;
 - rate-limit, retry, and partial-failure handling.
+- per-provider success watermarks so a partial run retries only the sources
+  whose date-bounded work did not complete;
 
 Acceptance criteria:
 

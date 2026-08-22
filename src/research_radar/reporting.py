@@ -66,7 +66,7 @@ def render_briefing(
         f"- Generated: {generated_at}",
         f"- Search window: {manifest['search_from']} to {manifest['search_to']}",
         f"- Project fingerprint: `{project_fingerprint}`",
-        f"- Candidates found: {manifest['candidate_count']}; new: {manifest.get('new_candidate_count', manifest['candidate_count'])}; shown: {len(visible)}; suppressed: {len(suppressed)}",
+        f"- Candidates found: {manifest['candidate_count']}; new or materially updated: {manifest.get('new_candidate_count', manifest['candidate_count'])} (updated: {manifest.get('materially_updated_count', 0)}); shown: {len(visible)}; suppressed: {len(suppressed)}",
         "",
         "## Executive signal",
         "",
@@ -110,6 +110,11 @@ def render_briefing(
 
     lines.extend(["## Search audit", ""])
     lines.append("- Queries: " + "; ".join(manifest.get("queries", [])))
+    for adapter, window in sorted(manifest.get("source_windows", {}).items()):
+        if isinstance(window, dict):
+            lines.append(
+                f"- {adapter} window: {window.get('from', '?')} to {window.get('to', '?')}"
+            )
     for adapter, status in sorted(manifest.get("adapter_status", {}).items()):
         lines.append(f"- {adapter}: {status}")
     for error in manifest.get("errors", []):
@@ -148,8 +153,11 @@ def write_briefing(
         "search_from": manifest["search_from"],
         "search_to": manifest["search_to"],
         "queries": manifest.get("queries", ()),
+        "source_windows": manifest.get("source_windows", {}),
         "adapter_status": manifest.get("adapter_status", {}),
         "errors": manifest.get("errors", ()),
+        "new_candidate_count": manifest.get("new_candidate_count"),
+        "materially_updated_count": manifest.get("materially_updated_count"),
         "ranked": [_digest_item(item) for item in ranked],
         "top_n": top_n,
     }

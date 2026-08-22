@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import unittest
+import io
+import json
 from dataclasses import replace
+from email.message import Message
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError
+from unittest.mock import patch
 
 from research_radar.discovery import (
     CrossrefAdapter,
     DiscoveryError,
+    HttpJsonClient,
     candidate_from_crossref,
     candidate_from_openalex,
     candidate_from_semantic_scholar,
@@ -106,6 +112,37 @@ class FakeClient:
 
 
 class DiscoveryTests(unittest.TestCase):
+    def test_http_client_honors_bounded_retry_after_for_rate_limits(self) -> None:
+        headers = Message()
+        headers["Retry-After"] = "3"
+        rate_limit = HTTPError(
+            "https://api.openalex.org/works",
+            429,
+            "rate limited",
+            headers,
+            io.BytesIO(),
+        )
+
+        class Response:
+            def __enter__(self) -> "Response":
+                return self
+
+            def __exit__(self, *args: object) -> None:
+                return None
+
+            def read(self) -> bytes:
+                return json.dumps({"results": []}).encode("utf-8")
+
+        client = HttpJsonClient(retries=1)
+        with patch(
+            "research_radar.discovery.urlopen",
+            side_effect=[rate_limit, Response()],
+        ), patch("research_radar.discovery.time.sleep") as sleep:
+            payload = client.get_json("https://api.openalex.org/works")
+
+        self.assertEqual(payload, {"results": []})
+        sleep.assert_called_once_with(3.0)
+
     def test_crossref_and_openalex_normalize_to_same_identity(self) -> None:
         crossref = candidate_from_crossref(crossref_item(), "crossref:keywords")
         openalex = candidate_from_openalex(openalex_item(), "openalex:forward-citations")
@@ -210,6 +247,31 @@ class DiscoveryTests(unittest.TestCase):
         self.assertIn(
             "semanticscholar:forward-citations",
             outcome.candidates[0].discovered_by,
+        )
+
+    def test_each_provider_uses_its_own_successful_watermark(self) -> None:
+        snapshot = ingest_project(FIXTURE)
+        client = FakeClient()
+
+        outcome = discover(
+            snapshot,
+            search_to="2026-08-21",
+            search_from_by_source={
+                "crossref": "2026-08-20",
+                "openalex": "2026-08-10",
+                "semanticscholar": "2026-08-01",
+            },
+            client=client,
+            limit_per_lane=2,
+        )
+
+        self.assertEqual(outcome.source_windows["crossref"]["from"], "2026-08-20")
+        self.assertEqual(outcome.source_windows["openalex"]["from"], "2026-08-10")
+        self.assertTrue(
+            any("from-pub-date%3A2026-08-20" in url for url in client.urls)
+        )
+        self.assertTrue(
+            any("from_publication_date%3A2026-08-10" in url for url in client.urls)
         )
 
     def test_one_adapter_failure_is_nonfatal(self) -> None:

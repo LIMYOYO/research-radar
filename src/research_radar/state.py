@@ -236,11 +236,29 @@ def save_discovery(
     candidates: list[dict[str, object]],
     manifest: dict[str, object],
     status: str,
-) -> tuple[int, int]:
-    """Persist a discovery run and return (run_id, newly_seen_count)."""
+) -> tuple[int, int, tuple[str, ...]]:
+    """Persist a run and return its id, new count, and material updates."""
     root = str(Path(project).expanduser().resolve())
     now = datetime.now(timezone.utc).isoformat()
     new_count = 0
+    updated_identities: list[str] = []
+    material_fields = {
+        "doi",
+        "openalex_id",
+        "semantic_scholar_id",
+        "identity_status",
+        "title",
+        "authors",
+        "year",
+        "venue",
+        "abstract",
+        "url",
+        "discovered_by",
+        "access_status",
+        "evidence_level",
+        "cited_by_count",
+        "publication_date",
+    }
     with connect(root) as connection:
         project_exists = connection.execute(
             "SELECT 1 FROM projects WHERE project_root = ?", (root,)
@@ -257,12 +275,25 @@ def save_discovery(
         run_id = int(cursor.lastrowid)
         for candidate in candidates:
             identity = str(candidate["identity"])
-            exists = connection.execute(
-                "SELECT 1 FROM candidates WHERE project_root = ? AND identity = ?",
+            previous = connection.execute(
+                "SELECT payload_json FROM candidates WHERE project_root = ? AND identity = ?",
                 (root, identity),
             ).fetchone()
-            if not exists:
+            if not previous:
                 new_count += 1
+            else:
+                try:
+                    old_payload = json.loads(previous["payload_json"])
+                except (json.JSONDecodeError, TypeError):
+                    old_payload = {}
+                old_material = {
+                    key: old_payload.get(key) for key in material_fields
+                }
+                new_material = {
+                    key: candidate.get(key) for key in material_fields
+                }
+                if old_material != new_material:
+                    updated_identities.append(identity)
             connection.execute(
                 """
                 INSERT INTO candidates(project_root, identity, payload_json, first_seen_at, last_seen_at)
@@ -279,7 +310,18 @@ def save_discovery(
                     now,
                 ),
             )
-    return run_id, new_count
+        stored_manifest = dict(manifest)
+        stored_manifest["new_candidate_count"] = new_count + len(updated_identities)
+        stored_manifest["newly_seen_count"] = new_count
+        stored_manifest["materially_updated_count"] = len(updated_identities)
+        connection.execute(
+            "UPDATE runs SET manifest_json = ? WHERE id = ?",
+            (
+                json.dumps(stored_manifest, ensure_ascii=False, sort_keys=True),
+                run_id,
+            ),
+        )
+    return run_id, new_count, tuple(updated_identities)
 
 
 def load_candidates(project: str | Path) -> list[dict[str, object]]:
@@ -446,3 +488,37 @@ def last_successful_search_to(project: str | Path) -> str | None:
         if isinstance(value, str) and value:
             return value
     return None
+
+
+def last_successful_search_to_by_adapter(
+    project: str | Path,
+) -> dict[str, str]:
+    """Return the newest completed search date for each successful adapter."""
+    root = str(Path(project).expanduser().resolve())
+    with connect(root) as connection:
+        rows = connection.execute(
+            """
+            SELECT manifest_json
+            FROM runs
+            WHERE project_root = ? AND run_type = 'discovery'
+            ORDER BY id DESC
+            """,
+            (root,),
+        ).fetchall()
+    watermarks: dict[str, str] = {}
+    for row in rows:
+        try:
+            manifest = json.loads(row["manifest_json"])
+        except (json.JSONDecodeError, TypeError):
+            continue
+        search_to = manifest.get("search_to")
+        statuses = manifest.get("adapter_status")
+        if not isinstance(search_to, str) or not isinstance(statuses, dict):
+            continue
+        for adapter, status in statuses.items():
+            name = str(adapter)
+            if name in watermarks:
+                continue
+            if str(status).startswith("ok"):
+                watermarks[name] = search_to
+    return watermarks

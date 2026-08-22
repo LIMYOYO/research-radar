@@ -14,8 +14,10 @@ from research_radar.discovery import (
     CrossrefAdapter,
     DiscoveryBudgetError,
     DiscoveryError,
+    DiscoveryNotFoundError,
     DiscoveryRateLimitError,
     HttpJsonClient,
+    OpenAlexAdapter,
     candidate_from_crossref,
     candidate_from_openalex,
     candidate_from_semantic_scholar,
@@ -152,6 +154,120 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(payload, {"results": []})
         sleep.assert_called_once_with(3.0)
 
+    def test_http_client_paces_crossref_public_list_requests(self) -> None:
+        class Response:
+            def __enter__(self) -> "Response":
+                return self
+
+            def __exit__(self, *args: object) -> None:
+                return None
+
+            def read(self) -> bytes:
+                return json.dumps({"message": {"items": []}}).encode("utf-8")
+
+        client = HttpJsonClient(retries=0)
+        with patch.dict("research_radar.discovery.os.environ", {}, clear=True), patch(
+            "research_radar.discovery.urlopen",
+            side_effect=[Response(), Response()],
+        ), patch(
+            "research_radar.discovery.time.monotonic",
+            side_effect=[100.0, 100.2, 101.25],
+        ), patch("research_radar.discovery.time.sleep") as sleep:
+            client.get_json("https://api.crossref.org/works?query=first")
+            client.get_json("https://api.crossref.org/works?query=second")
+
+        sleep.assert_called_once()
+        self.assertAlmostEqual(sleep.call_args.args[0], 0.85)
+
+    def test_http_client_paces_semantic_scholar_requests(self) -> None:
+        class Response:
+            def __enter__(self) -> "Response":
+                return self
+
+            def __exit__(self, *args: object) -> None:
+                return None
+
+            def read(self) -> bytes:
+                return json.dumps({"data": []}).encode("utf-8")
+
+        client = HttpJsonClient(retries=0)
+        with patch(
+            "research_radar.discovery.urlopen",
+            side_effect=[Response(), Response()],
+        ), patch(
+            "research_radar.discovery.time.monotonic",
+            side_effect=[200.0, 200.1, 201.15],
+        ), patch("research_radar.discovery.time.sleep") as sleep:
+            client.get_json("https://api.semanticscholar.org/graph/v1/paper/first")
+            client.get_json("https://api.semanticscholar.org/graph/v1/paper/second")
+
+        sleep.assert_called_once()
+        self.assertAlmostEqual(sleep.call_args.args[0], 0.95)
+
+    def test_http_client_attaches_provider_credentials_only_to_requests(self) -> None:
+        class Response:
+            def __enter__(self) -> "Response":
+                return self
+
+            def __exit__(self, *args: object) -> None:
+                return None
+
+            def read(self) -> bytes:
+                return b"{}"
+
+        environment = {
+            "CROSSREF_MAILTO": "researcher@example.test",
+            "OPENALEX_API_KEY": "openalex-secret",
+            "SEMANTIC_SCHOLAR_API_KEY": "s2-secret",
+        }
+        client = HttpJsonClient(retries=0)
+        with patch.dict(
+            "research_radar.discovery.os.environ", environment, clear=True
+        ), patch(
+            "research_radar.discovery.urlopen",
+            side_effect=[Response(), Response(), Response()],
+        ) as request:
+            client.get_json("https://api.crossref.org/works?query=test")
+            client.get_json("https://api.openalex.org/works?search=test")
+            client.get_json(
+                "https://api.semanticscholar.org/graph/v1/paper/DOI:test"
+            )
+
+        crossref_request = request.call_args_list[0].args[0]
+        openalex_request = request.call_args_list[1].args[0]
+        semantic_request = request.call_args_list[2].args[0]
+        self.assertIn("mailto=researcher%40example.test", crossref_request.full_url)
+        self.assertNotIn("openalex-secret", openalex_request.full_url)
+        self.assertEqual(
+            openalex_request.get_header("Authorization"), "Bearer openalex-secret"
+        )
+        self.assertNotIn("s2-secret", semantic_request.full_url)
+        self.assertEqual(semantic_request.get_header("X-api-key"), "s2-secret")
+
+    def test_http_client_fast_fails_long_retry_after_with_recovery_hint(self) -> None:
+        headers = Message()
+        headers["Retry-After"] = "300"
+        rate_limit = HTTPError(
+            "https://api.openalex.org/works",
+            429,
+            "daily budget exhausted",
+            headers,
+            io.BytesIO(),
+        )
+        client = HttpJsonClient(retries=2, max_retry_after_seconds=10)
+
+        with patch.dict("research_radar.discovery.os.environ", {}, clear=True), patch(
+            "research_radar.discovery.urlopen", side_effect=rate_limit
+        ) as request, patch("research_radar.discovery.time.sleep") as sleep:
+            with self.assertRaisesRegex(
+                DiscoveryRateLimitError,
+                r"after 1 attempt.*retry after 300 seconds.*OPENALEX_API_KEY",
+            ):
+                client.get_json("https://api.openalex.org/works")
+
+        self.assertEqual(request.call_count, 1)
+        sleep.assert_not_called()
+
     def test_http_client_does_not_retry_nontransient_404(self) -> None:
         not_found = HTTPError(
             "https://api.semanticscholar.org/paper/missing",
@@ -165,7 +281,7 @@ class DiscoveryTests(unittest.TestCase):
             "research_radar.discovery.urlopen",
             side_effect=not_found,
         ) as request, patch("research_radar.discovery.time.sleep") as sleep:
-            with self.assertRaises(DiscoveryError):
+            with self.assertRaises(DiscoveryNotFoundError):
                 client.get_json("https://api.semanticscholar.org/paper/missing")
 
         self.assertEqual(request.call_count, 1)
@@ -188,6 +304,36 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(merged[0].evidence_level, "abstract")
         self.assertEqual(openalex.evidence_level, "abstract")  # type: ignore[union-attr]
         self.assertEqual(openalex.access_status, "full-text")  # type: ignore[union-attr]
+
+    def test_openalex_related_works_are_fetched_in_one_batch(self) -> None:
+        class BatchClient:
+            def __init__(self) -> None:
+                self.urls: list[str] = []
+
+            def get_json(self, url: str) -> dict[str, Any]:
+                self.urls.append(url)
+                first = openalex_item()
+                second = openalex_item()
+                second["id"] = "https://openalex.org/WSECOND"
+                second["doi"] = "https://doi.org/10.5555/second"
+                second["title"] = "A Second Related Work"
+                return {"results": [first, second]}
+
+        client = BatchClient()
+        work = {
+            "related_works": [
+                "https://openalex.org/WFUTURE",
+                "https://openalex.org/WSECOND",
+            ]
+        }
+        candidates = OpenAlexAdapter(client).related(work, limit=10)
+
+        self.assertEqual(len(client.urls), 1)
+        self.assertIn(
+            "filter=openalex%3AWFUTURE%7CWSECOND",
+            client.urls[0],
+        )
+        self.assertEqual(len(candidates), 2)
 
     def test_crossref_partial_date_is_tolerated(self) -> None:
         candidate = candidate_from_crossref(
@@ -251,6 +397,30 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(adapter.references(seed), [])
         self.assertEqual(len(adapter.coverage_notes), 2)
         self.assertIn("publisher-elided", adapter.coverage_notes[0])
+
+    def test_semantic_scholar_missing_seed_is_a_coverage_gap_not_failure(self) -> None:
+        class MissingSemanticScholarSeed(FakeClient):
+            def get_json(self, url: str) -> dict[str, Any]:
+                if "api.semanticscholar.org" in url:
+                    self.urls.append(url)
+                    raise DiscoveryNotFoundError("not indexed")
+                return super().get_json(url)
+
+        outcome = discover(
+            ingest_project(FIXTURE),
+            search_from="2026-08-01",
+            search_to="2026-08-21",
+            client=MissingSemanticScholarSeed(),
+            limit_per_lane=2,
+        )
+
+        self.assertIn(
+            "0 failure(s); 2 coverage gap(s)",
+            outcome.adapter_status["semanticscholar"],
+        )
+        self.assertFalse(
+            any(error.startswith("semanticscholar") for error in outcome.errors)
+        )
 
     def test_discovery_resolves_seeds_and_deduplicates_sources(self) -> None:
         snapshot = ingest_project(FIXTURE)

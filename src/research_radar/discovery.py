@@ -14,7 +14,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Callable, Iterable, Protocol
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 from . import __version__
@@ -29,6 +29,12 @@ SEMANTIC_SCHOLAR_API = "https://api.semanticscholar.org/graph/v1"
 USER_AGENT = (
     f"research-radar/{__version__} (https://github.com/LIMYOYO/research-radar)"
 )
+CROSSREF_PUBLIC_LIST_INTERVAL_SECONDS = 1.05
+CROSSREF_POLITE_LIST_INTERVAL_SECONDS = 0.38
+CROSSREF_PUBLIC_SINGLE_INTERVAL_SECONDS = 0.22
+CROSSREF_POLITE_SINGLE_INTERVAL_SECONDS = 0.12
+SEMANTIC_SCHOLAR_INTERVAL_SECONDS = 1.05
+MAX_LOCAL_RETRY_AFTER_SECONDS = 10.0
 
 
 class DiscoveryError(RuntimeError):
@@ -37,6 +43,10 @@ class DiscoveryError(RuntimeError):
 
 class DiscoveryRateLimitError(DiscoveryError):
     """Raised after a provider exhausts its bounded rate-limit retry."""
+
+
+class DiscoveryNotFoundError(DiscoveryError):
+    """Raised when a provider does not index the requested record."""
 
 
 class DiscoveryBudgetError(DiscoveryError):
@@ -99,15 +109,18 @@ class HttpJsonClient:
         *,
         cache_dir: Path | None = None,
         timeout: float = 20.0,
-        retries: int = 1,
+        retries: int = 2,
         cache_ttl_seconds: int = 86400,
         deadline_monotonic: float | None = None,
+        max_retry_after_seconds: float = MAX_LOCAL_RETRY_AFTER_SECONDS,
     ) -> None:
         self.cache_dir = cache_dir
         self.timeout = timeout
         self.retries = retries
         self.cache_ttl_seconds = cache_ttl_seconds
         self.deadline_monotonic = deadline_monotonic
+        self.max_retry_after_seconds = max(0.0, max_retry_after_seconds)
+        self._last_request_started: dict[str, float] = {}
         if cache_dir:
             cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -117,6 +130,116 @@ class HttpJsonClient:
         name = hashlib.sha256(url.encode("utf-8")).hexdigest() + ".json"
         return self.cache_dir / name
 
+    @staticmethod
+    def _provider(url: str) -> str | None:
+        if url.startswith(CROSSREF_API):
+            return "crossref"
+        if url.startswith(OPENALEX_API):
+            return "openalex"
+        if url.startswith(SEMANTIC_SCHOLAR_API):
+            return "semanticscholar"
+        return None
+
+    @staticmethod
+    def _crossref_mailto() -> str | None:
+        value = os.environ.get("CROSSREF_MAILTO", "").strip()
+        return value or None
+
+    def _request_interval(self, url: str) -> float:
+        provider = self._provider(url)
+        if provider == "crossref":
+            polite = self._crossref_mailto() is not None
+            is_list = "/works?" in url
+            if is_list:
+                return (
+                    CROSSREF_POLITE_LIST_INTERVAL_SECONDS
+                    if polite
+                    else CROSSREF_PUBLIC_LIST_INTERVAL_SECONDS
+                )
+            return (
+                CROSSREF_POLITE_SINGLE_INTERVAL_SECONDS
+                if polite
+                else CROSSREF_PUBLIC_SINGLE_INTERVAL_SECONDS
+            )
+        if provider == "semanticscholar":
+            return SEMANTIC_SCHOLAR_INTERVAL_SECONDS
+        return 0.0
+
+    def _sleep_with_budget(self, delay: float, *, cause: Exception | None = None) -> None:
+        if delay <= 0:
+            return
+        if self.deadline_monotonic is not None:
+            remaining = self.deadline_monotonic - time.monotonic()
+            if remaining <= 0 or delay >= remaining:
+                raise DiscoveryBudgetError(
+                    "Discovery stopped at the configured wall-clock budget."
+                ) from cause
+        time.sleep(delay)
+
+    def _pace(self, url: str) -> None:
+        provider = self._provider(url)
+        interval = self._request_interval(url)
+        if provider is None or interval <= 0:
+            return
+        now = time.monotonic()
+        last = self._last_request_started.get(provider)
+        if last is not None:
+            delay = interval - (now - last)
+            if delay > 0:
+                self._sleep_with_budget(delay)
+                now = time.monotonic()
+        self._last_request_started[provider] = now
+
+    def _prepare_url(self, url: str) -> str:
+        mailto = self._crossref_mailto()
+        if not mailto or not url.startswith(CROSSREF_API):
+            return url
+        parsed = urlsplit(url)
+        query = parse_qsl(parsed.query, keep_blank_values=True)
+        if not any(key == "mailto" for key, _ in query):
+            query.append(("mailto", mailto))
+        return urlunsplit(
+            (parsed.scheme, parsed.netloc, parsed.path, urlencode(query), parsed.fragment)
+        )
+
+    @staticmethod
+    def _request_headers(url: str) -> dict[str, str]:
+        headers = {"Accept": "application/json", "User-Agent": USER_AGENT}
+        if url.startswith(SEMANTIC_SCHOLAR_API):
+            api_key = os.environ.get("SEMANTIC_SCHOLAR_API_KEY", "").strip()
+            if api_key:
+                headers["x-api-key"] = api_key
+        if url.startswith(OPENALEX_API):
+            api_key = os.environ.get("OPENALEX_API_KEY", "").strip()
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+        return headers
+
+    @staticmethod
+    def _rate_limit_hint(url: str) -> str:
+        if url.startswith(CROSSREF_API) and not HttpJsonClient._crossref_mailto():
+            return (
+                "set CROSSREF_MAILTO to a valid contact email for the polite pool, "
+                "or wait before the next run"
+            )
+        if (
+            url.startswith(OPENALEX_API)
+            and not os.environ.get("OPENALEX_API_KEY", "").strip()
+        ):
+            return (
+                "set OPENALEX_API_KEY to a free personal key, or wait for the "
+                "daily budget reset"
+            )
+        if (
+            url.startswith(SEMANTIC_SCHOLAR_API)
+            and not os.environ.get("SEMANTIC_SCHOLAR_API_KEY", "").strip()
+        ):
+            return (
+                "set SEMANTIC_SCHOLAR_API_KEY to avoid the shared anonymous pool, "
+                "or retry later"
+            )
+        return "wait for the provider quota reset before retrying"
+
     def get_json(self, url: str) -> dict[str, Any]:
         cache_path = self._cache_path(url)
         if cache_path and cache_path.is_file():
@@ -124,22 +247,23 @@ class HttpJsonClient:
             if age <= self.cache_ttl_seconds:
                 return json.loads(cache_path.read_text(encoding="utf-8"))
 
+        prepared_url = self._prepare_url(url)
         error: Exception | None = None
+        last_retry_after: float | None = None
+        attempts_made = 0
         for attempt in range(self.retries + 1):
-            request_timeout = self.timeout
-            if self.deadline_monotonic is not None:
-                remaining = self.deadline_monotonic - time.monotonic()
-                if remaining <= 0:
-                    raise DiscoveryBudgetError(
-                        "Discovery stopped at the configured wall-clock budget."
-                    )
-                request_timeout = min(request_timeout, max(0.1, remaining))
             try:
-                headers = {"Accept": "application/json", "User-Agent": USER_AGENT}
-                api_key = os.environ.get("SEMANTIC_SCHOLAR_API_KEY")
-                if api_key and url.startswith(SEMANTIC_SCHOLAR_API):
-                    headers["x-api-key"] = api_key
-                request = Request(url, headers=headers)
+                self._pace(url)
+                request_timeout = self.timeout
+                if self.deadline_monotonic is not None:
+                    remaining = self.deadline_monotonic - time.monotonic()
+                    if remaining <= 0:
+                        raise DiscoveryBudgetError(
+                            "Discovery stopped at the configured wall-clock budget."
+                        )
+                    request_timeout = min(request_timeout, max(0.1, remaining))
+                attempts_made += 1
+                request = Request(prepared_url, headers=self._request_headers(url))
                 with urlopen(request, timeout=request_timeout) as response:
                     payload = json.loads(response.read().decode("utf-8"))
                 if cache_path:
@@ -154,42 +278,48 @@ class HttpJsonClient:
                 if attempt < self.retries and retryable:
                     retry_after = exc.headers.get("Retry-After") if exc.headers else None
                     try:
-                        requested_delay = float(retry_after) if retry_after else 0.0
+                        requested_delay = max(
+                            0.0, float(retry_after) if retry_after else 0.0
+                        )
                     except ValueError:
                         requested_delay = 0.0
+                    last_retry_after = requested_delay or None
+                    if requested_delay > self.max_retry_after_seconds:
+                        break
                     delay = (
-                        min(10.0, max(0.5 * (2**attempt), requested_delay))
+                        min(
+                            self.max_retry_after_seconds,
+                            max(1.0 * (2**attempt), requested_delay),
+                        )
                         if exc.code in {429, 503}
                         else 0.5 * (2**attempt)
                     )
-                    if self.deadline_monotonic is not None:
-                        remaining = self.deadline_monotonic - time.monotonic()
-                        if remaining <= 0:
-                            raise DiscoveryBudgetError(
-                                "Discovery stopped at the configured wall-clock budget."
-                            ) from exc
-                        delay = min(delay, remaining)
-                    time.sleep(delay)
+                    self._sleep_with_budget(delay, cause=exc)
                 else:
                     break
             except (URLError, TimeoutError, json.JSONDecodeError) as exc:
                 error = exc
                 if attempt < self.retries:
                     delay = 0.5 * (2**attempt)
-                    if self.deadline_monotonic is not None:
-                        remaining = self.deadline_monotonic - time.monotonic()
-                        if remaining <= 0:
-                            raise DiscoveryBudgetError(
-                                "Discovery stopped at the configured wall-clock budget."
-                            ) from exc
-                        delay = min(delay, remaining)
-                    time.sleep(delay)
+                    self._sleep_with_budget(delay, cause=exc)
         if isinstance(error, HTTPError) and error.code in {429, 503}:
+            retry_note = (
+                f" Provider requested retry after {last_retry_after:g} seconds."
+                if last_retry_after is not None
+                else ""
+            )
             raise DiscoveryRateLimitError(
-                f"Provider rate limit persisted after {self.retries + 1} attempt(s): "
-                f"{url}: HTTP {error.code}"
+                f"Provider rate limit persisted after {attempts_made} attempt(s): "
+                f"{url}: HTTP {error.code}.{retry_note} Recovery: "
+                f"{self._rate_limit_hint(url)}."
             ) from error
-        raise DiscoveryError(f"Request failed after {self.retries + 1} attempt(s): {url}: {error}")
+        if isinstance(error, HTTPError) and error.code == 404:
+            raise DiscoveryNotFoundError(
+                f"Provider does not index this record: {url}: HTTP 404"
+            ) from error
+        raise DiscoveryError(
+            f"Request failed after {attempts_made} attempt(s): {url}: {error}"
+        )
 
 
 def _first(value: object) -> object | None:
@@ -478,14 +608,25 @@ class OpenAlexAdapter:
         return [candidate for item in payload.get("results", []) if (candidate := candidate_from_openalex(item, "openalex:forward-citations"))]
 
     def related(self, work: dict[str, Any], *, limit: int = 10) -> list[Candidate]:
-        candidates: list[Candidate] = []
-        for related_id in work.get("related_works", [])[:limit]:
-            identifier = quote(str(related_id).rsplit("/", 1)[-1], safe="")
-            item = self.client.get_json(f"{OPENALEX_API}/works/{identifier}")
-            candidate = candidate_from_openalex(item, "openalex:related")
-            if candidate:
-                candidates.append(candidate)
-        return candidates
+        identifiers = [
+            str(related_id).rsplit("/", 1)[-1]
+            for related_id in work.get("related_works", [])[: min(limit, 100)]
+            if related_id
+        ]
+        if not identifiers:
+            return []
+        params = urlencode(
+            {
+                "filter": f"openalex:{'|'.join(identifiers)}",
+                "per_page": len(identifiers),
+            }
+        )
+        payload = self.client.get_json(f"{OPENALEX_API}/works?{params}")
+        return [
+            candidate
+            for item in payload.get("results", [])
+            if (candidate := candidate_from_openalex(item, "openalex:related"))
+        ]
 
     def search(
         self, query: str, *, from_date: str, until_date: str, limit: int = 20
@@ -973,6 +1114,12 @@ def discover(
                     found.extend(adapter.references(seed, limit=limit_per_lane))
                 queried += 1
             except Exception as exc:
+                if isinstance(exc, DiscoveryNotFoundError):
+                    queried += 1
+                    adapter.coverage_notes.append(
+                        f"{seed.citation_key}: seed not indexed by Semantic Scholar"
+                    )
+                    continue
                 failures += 1
                 errors.append(f"{adapter.name} seed {seed.citation_key}: {exc}")
                 if isinstance(exc, (DiscoveryRateLimitError, DiscoveryBudgetError)):

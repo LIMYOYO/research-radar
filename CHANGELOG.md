@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.2 — 2026-08-22
+
+- Added provider-aware pacing for Crossref and Semantic Scholar plus bounded,
+  actionable recovery for long `Retry-After` responses.
+- Added optional `CROSSREF_MAILTO` and `OPENALEX_API_KEY` support while keeping
+  API keys out of URLs, caches, reports, and project configuration.
+- Batched OpenAlex related-work retrieval to reduce daily-budget consumption.
+- Reclassified Semantic Scholar 404 responses as explicit index-coverage gaps
+  instead of system failures.
+- Verified a no-cache MobileAED run: Crossref completed, Semantic Scholar
+  continued with expected coverage gaps, and exhausted OpenAlex anonymous quota
+  degraded without blocking the run.
+
 ## 0.3.1 — 2026-08-22
 
 - Added a standard `research-radar --version` interface and regression test.

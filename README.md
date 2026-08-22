@@ -6,7 +6,7 @@ Research Radar is intended for researchers who already have a paper in progress 
 
 The desired experience is closer to reading a personalized research newspaper than running a literature review from scratch.
 
-**Current status:** version 0.3.1 covers the local vertical slice: U of T /
+**Current status:** version 0.3.2 covers the local vertical slice: U of T /
 INFORMS PDF intake, TeX and BibTeX ingestion, Crossref, OpenAlex, and Semantic
 Scholar discovery, explainable ranking, persisted deep distillation,
 incremental on-demand and weekly briefings, feedback, local full-text export, and a
@@ -288,6 +288,33 @@ an update; the prior skill is retained as a timestamped backup. Use
 
 For editable development instead, create `.venv` and run
 `.venv/bin/python -m pip install -e .`.
+
+### Provider quotas and optional credentials
+
+Research Radar works without provider credentials and deliberately slows its
+Crossref and Semantic Scholar requests to their public-pool pace. For repeated
+or larger runs, set any available provider values in the shell before invoking
+the CLI:
+
+```sh
+export CROSSREF_MAILTO='researcher@example.edu'
+export OPENALEX_API_KEY='your-free-openalex-key'
+export SEMANTIC_SCHOLAR_API_KEY='your-semantic-scholar-key'
+research-radar run --project /path/to/my-research-project
+```
+
+`CROSSREF_MAILTO` identifies a contact for Crossref's polite pool. The two API
+keys are sent only in request headers; Research Radar does not write them into
+its cache, reports, or project configuration. OpenAlex's anonymous daily budget
+is small enough to be exhausted by repeated graph runs, so its free key is the
+most useful of the three. If a provider asks for a long wait, the run now stops
+that adapter immediately, prints the relevant recovery setting, and lets the
+other sources continue.
+
+Create or manage credentials only through the providers' official pages:
+[Crossref REST API etiquette](https://www.crossref.org/documentation/retrieve-metadata/rest-api/tips-for-using-the-crossref-rest-api/),
+[OpenAlex API authentication](https://help.openalex.org/api/authentication/),
+and [Semantic Scholar API](https://www.semanticscholar.org/product/api).
 
 `run` persists exactly which candidates were new or materially updated;
 `queue --scope latest` ranks only that delta and emits argv-style next commands

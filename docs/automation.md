@@ -17,6 +17,11 @@ From the target research project, complete one manual run:
 /absolute/path/to/research-radar/.venv/bin/research-radar run --project .
 ```
 
+`doctor` must report `profile-structure: complete`. If the project already has
+an ordinary software `README.md`, `research-radar init` creates a separate
+`RESEARCH_PROFILE.md` without modifying that README. Fill every required
+section before scheduling; otherwise discovery deliberately stops.
+
 Fix any profile, BibTeX, or source diagnostics. Review the first report and add
 feedback for obvious noise. The schedule should reproduce a trusted manual run,
 not serve as the first integration test.

@@ -262,6 +262,7 @@ python3 -m venv .venv
 
 .venv/bin/research-radar init /path/to/my-research-project
 # Fill in RESEARCH_PROFILE.md and add/keep paper.tex plus references.bib.
+# A normal software README is not treated as a completed research profile.
 .venv/bin/research-radar doctor --project /path/to/my-research-project
 .venv/bin/research-radar run --project /path/to/my-research-project
 .venv/bin/research-radar weekly --project /path/to/my-research-project

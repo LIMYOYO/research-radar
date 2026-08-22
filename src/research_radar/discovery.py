@@ -19,7 +19,7 @@ from urllib.request import Request, urlopen
 
 from .access import AccessError, normalize_doi
 from .config import configured_watch, load_config
-from .project import ProjectSnapshot, SeedPaper, normalize_title
+from .project import ProjectSnapshot, SeedPaper, normalize_title, require_profile_ready
 
 
 CROSSREF_API = "https://api.crossref.org"
@@ -658,6 +658,7 @@ def discover(
     client: JsonClient | None = None,
     limit_per_lane: int = 20,
 ) -> DiscoveryOutcome:
+    require_profile_ready(snapshot.profile)
     root = Path(snapshot.project_root)
     config = load_config(root)
     today = date.today()

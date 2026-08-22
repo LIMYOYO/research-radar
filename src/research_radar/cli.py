@@ -25,7 +25,13 @@ from .config import load_config
 from .discovery import Candidate, discover
 from .distillation import build_context, validate_for_project
 from .evaluation import evaluate_fixture
-from .project import ProjectError, ingest_project
+from .project import (
+    ProjectError,
+    assess_profile,
+    ingest_project,
+    read_profile,
+    require_profile_ready,
+)
 from .ranking import apply_distillations, rank_candidates
 from .reporting import write_briefing, write_weekly
 from .resolution import resolve_access
@@ -288,7 +294,11 @@ def _initialize_project(project: Path, force_profile: bool = False) -> dict[str,
     explicit_profile = root / "RESEARCH_PROFILE.md"
     readme = root / "README.md"
     profile_created = False
-    if force_profile or (not explicit_profile.exists() and not readme.exists()):
+    readme_is_profile = False
+    if not explicit_profile.exists() and readme.exists():
+        readme_profile, _ = read_profile(root)
+        readme_is_profile = assess_profile(readme_profile).ready
+    if force_profile or (not explicit_profile.exists() and not readme_is_profile):
         template = TEMPLATE_ROOT / "RESEARCH_PROFILE.md"
         if not template.is_file():
             raise ProjectError(f"Bundled profile template is missing: {template}")
@@ -329,10 +339,23 @@ def _doctor(project: Path) -> tuple[dict[str, object], int]:
         check("ingestion", False, str(exc))
     else:
         check("ingestion", True, f"{len(snapshot.seeds)} seed paper(s)")
+        readiness = assess_profile(snapshot.profile)
+        profile_detail: list[str] = []
+        if readiness.missing_sections:
+            profile_detail.append("missing: " + ", ".join(readiness.missing_sections))
+        if readiness.placeholder_sections:
+            profile_detail.append(
+                "placeholders: " + ", ".join(readiness.placeholder_sections)
+            )
+        check(
+            "profile-structure",
+            readiness.ready,
+            "complete" if readiness.ready else "; ".join(profile_detail),
+        )
         check(
             "stable-identifiers",
-            any(seed.doi for seed in snapshot.seeds),
-            f"{sum(bool(seed.doi) for seed in snapshot.seeds)} DOI-bearing seed(s)",
+            any(seed.doi or seed.preprint_id for seed in snapshot.seeds),
+            f"{sum(bool(seed.doi or seed.preprint_id) for seed in snapshot.seeds)} persistent-ID seed(s)",
         )
         check(
             "duplicate-identities",
@@ -369,11 +392,18 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "profile":
             snapshot = ingest_project(args.project)
+            readiness = assess_profile(snapshot.profile)
+            result = snapshot.to_dict(include_text=args.include_text)
+            result["profile_readiness"] = asdict(readiness)
+            if not readiness.ready:
+                result["state_file"] = None
+                result["state_counts"] = None
+                print(json.dumps(result, indent=2, ensure_ascii=False, sort_keys=True))
+                return 2
             state_file = save_snapshot(
                 snapshot,
                 approve_profile_change=args.approve_change,
             )
-            result = snapshot.to_dict(include_text=args.include_text)
             result["state_file"] = str(state_file)
             result["state_counts"] = state_counts(args.project)
             print(json.dumps(result, indent=2, ensure_ascii=False, sort_keys=True))
@@ -386,6 +416,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "discover":
             snapshot = ingest_project(args.project)
+            require_profile_ready(snapshot.profile)
             save_snapshot(snapshot)
             search_from = args.search_from or last_successful_search_to(args.project)
             outcome = discover(
@@ -429,6 +460,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "run":
             snapshot = ingest_project(args.project)
+            require_profile_ready(snapshot.profile)
             save_snapshot(snapshot)
             prior_identities = {
                 str(item["identity"])
@@ -520,6 +552,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "brief":
             snapshot = ingest_project(args.project)
+            require_profile_ready(snapshot.profile)
             save_snapshot(snapshot)
             stored = tuple(Candidate.from_dict(item) for item in load_candidates(args.project))
             ranked = rank_candidates(
@@ -578,6 +611,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.days < 1:
                 raise ValueError("--days must be at least 1.")
             snapshot = ingest_project(args.project)
+            require_profile_ready(snapshot.profile)
             save_snapshot(snapshot)
             since = datetime.now(timezone.utc) - timedelta(days=args.days)
             records = load_candidate_records(
@@ -618,6 +652,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "distill":
             snapshot = ingest_project(args.project)
+            require_profile_ready(snapshot.profile)
             save_snapshot(snapshot)
             candidates = {
                 candidate.identity: candidate

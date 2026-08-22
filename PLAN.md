@@ -164,6 +164,8 @@ Deliverables:
 - duplicate detection for bibliography entries;
 - project fingerprint generated from the profile, manuscript, and closest references;
 - `research-radar init`, `profile`, and `doctor` commands;
+- structured-profile readiness checks so a generic repository README cannot
+  silently become the discovery query;
 - SQLite schema and migration strategy.
 
 Acceptance criteria:

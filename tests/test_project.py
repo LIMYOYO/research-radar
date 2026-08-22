@@ -1,12 +1,24 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 
-from research_radar.cli import _doctor, _initialize_project
-from research_radar.project import ingest_project, normalize_title, strip_tex_comments
+from research_radar.cli import _doctor, _initialize_project, main
+from research_radar.project import (
+    ProjectError,
+    ResearchProfile,
+    assess_profile,
+    ingest_project,
+    normalize_title,
+    parse_markdown_sections,
+    require_profile_ready,
+    strip_tex_comments,
+)
 from research_radar.state import ProfileChangePending, save_snapshot, state_counts
 
 
@@ -176,6 +188,93 @@ class ProjectTests(unittest.TestCase):
             diagnosis, exit_code = _doctor(root)
             self.assertEqual(exit_code, 2)
             self.assertFalse(diagnosis["ready"])
+
+    def test_generic_readme_cannot_masquerade_as_research_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            readme = root / "README.md"
+            readme.write_text(
+                "# Software package\n\nInstallation instructions.", encoding="utf-8"
+            )
+            (root / "paper.tex").write_text(
+                "\\cite{seed}\\bibliography{refs}", encoding="utf-8"
+            )
+            (root / "refs.bib").write_text(
+                "@article{seed,title={Seed},doi={10.5555/seed}}", encoding="utf-8"
+            )
+
+            snapshot = ingest_project(root)
+            readiness = assess_profile(snapshot.profile)
+            self.assertFalse(readiness.ready)
+            self.assertEqual(len(readiness.missing_sections), 10)
+            with self.assertRaisesRegex(ProjectError, "Research profile.*incomplete"):
+                require_profile_ready(snapshot.profile)
+
+            diagnosis, exit_code = _doctor(root)
+            self.assertEqual(exit_code, 2)
+            self.assertFalse(diagnosis["ready"])
+            profile_check = next(
+                item
+                for item in diagnosis["checks"]
+                if item["check"] == "profile-structure"
+            )
+            self.assertFalse(profile_check["ok"])
+
+            result = _initialize_project(root)
+            self.assertTrue(result["profile_created"])
+            self.assertTrue((root / "RESEARCH_PROFILE.md").is_file())
+            self.assertEqual(
+                readme.read_text(encoding="utf-8"),
+                "# Software package\n\nInstallation instructions.",
+            )
+
+    def test_complete_profile_passes_doctor(self) -> None:
+        snapshot = ingest_project(FIXTURE)
+        self.assertTrue(assess_profile(snapshot.profile).ready)
+        require_profile_ready(snapshot.profile)
+        diagnosis, exit_code = _doctor(FIXTURE)
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(diagnosis["ready"])
+
+    def test_public_profile_examples_are_ready_but_template_is_not(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        paths = sorted((root / "examples" / "profiles").glob("*.md"))
+        self.assertEqual(len(paths), 4)
+        for path in paths:
+            markdown = path.read_text(encoding="utf-8")
+            project_name, sections = parse_markdown_sections(markdown)
+            profile = ResearchProfile(path.name, project_name, markdown, sections)
+            self.assertTrue(assess_profile(profile).ready, path.name)
+
+        template = root / "src" / "research_radar" / "templates" / "RESEARCH_PROFILE.md"
+        markdown = template.read_text(encoding="utf-8")
+        project_name, sections = parse_markdown_sections(markdown)
+        profile = ResearchProfile(template.name, project_name, markdown, sections)
+        readiness = assess_profile(profile)
+        self.assertFalse(readiness.ready)
+        self.assertEqual(len(readiness.placeholder_sections), 10)
+
+    def test_incomplete_profile_is_diagnostic_only_and_not_persisted(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            result = _initialize_project(root)
+            self.assertTrue(result["profile_created"])
+            (root / "paper.tex").write_text(
+                "\\cite{seed}\\bibliography{refs}", encoding="utf-8"
+            )
+            (root / "refs.bib").write_text(
+                "@article{seed,title={Seed},doi={10.5555/seed}}", encoding="utf-8"
+            )
+
+            output = StringIO()
+            with redirect_stdout(output):
+                exit_code = main(["profile", "--project", str(root)])
+            payload = json.loads(output.getvalue())
+
+            self.assertEqual(exit_code, 2)
+            self.assertFalse(payload["profile_readiness"]["ready"])
+            self.assertIsNone(payload["state_file"])
+            self.assertFalse((root / ".research-radar" / "state.sqlite").exists())
 
     def test_profile_change_requires_explicit_approval(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

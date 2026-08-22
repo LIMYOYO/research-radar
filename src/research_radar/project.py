@@ -16,6 +16,29 @@ from .access import AccessError, normalize_doi
 
 IGNORED_DIRECTORIES = {".git", ".research-radar", ".venv", "node_modules"}
 PROFILE_FILENAMES = ("RESEARCH_PROFILE.md", "README.md")
+REQUIRED_PROFILE_SECTIONS = (
+    "research-question",
+    "framework-and-primitives",
+    "central-mechanism",
+    "method",
+    "key-assumptions",
+    "contribution-delta",
+    "closest-papers",
+    "watch",
+    "exclude",
+    "triage-preferences",
+)
+PROFILE_PLACEHOLDERS = {
+    "research-question": "what is the precise question the project answers",
+    "framework-and-primitives": "list the decision makers, timing, information",
+    "central-mechanism": "explain the causal, strategic, or theoretical logic",
+    "method": "state whether the project is analytical, empirical, experimental",
+    "key-assumptions": "which assumptions or modeling choices drive the result",
+    "contribution-delta": "what does this project change relative to the closest literature",
+    "closest-papers": "name the genuine competitors and explain the comparison",
+    "exclude": "describe lexically similar topics, settings, or methods",
+    "triage-preferences": "what deserves `read-now`, `cite`, or `watch`",
+}
 CITATION_PATTERN = re.compile(
     r"\\(?:cite|citep|citet|parencite|textcite|autocite)\*?"
     r"(?:\[[^\]]*\]){0,2}\{([^}]+)\}"
@@ -80,6 +103,13 @@ class ResearchProfile:
     project_name: str
     raw_markdown: str
     sections: dict[str, str]
+
+
+@dataclass(frozen=True)
+class ProfileReadiness:
+    ready: bool
+    missing_sections: tuple[str, ...]
+    placeholder_sections: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -163,6 +193,54 @@ def parse_markdown_sections(markdown: str) -> tuple[str, dict[str, str]]:
         if "\n".join(lines).strip()
     }
     return project_name, normalized
+
+
+def assess_profile(profile: ResearchProfile) -> ProfileReadiness:
+    """Check that a README/profile is a research distill, not generic repo prose."""
+    missing = tuple(
+        section for section in REQUIRED_PROFILE_SECTIONS if section not in profile.sections
+    )
+    placeholders: list[str] = []
+    for section in REQUIRED_PROFILE_SECTIONS:
+        content = profile.sections.get(section, "").strip()
+        if not content:
+            continue
+        normalized = re.sub(r"\s+", " ", content.lower())
+        marker = PROFILE_PLACEHOLDERS.get(section)
+        if marker and marker in normalized:
+            placeholders.append(section)
+            continue
+        if section == "watch":
+            values = [
+                value.strip()
+                for value in re.findall(
+                    r"(?im)^[ \t]*[-*]?[ \t]*(?:keywords?|authors?|venues?(?:[ \t]+or[ \t]+working-paper[ \t]+series)?)[ \t]*:[ \t]*(.*)$",
+                    content,
+                )
+            ]
+            if not values or not any(values):
+                placeholders.append(section)
+    return ProfileReadiness(
+        ready=not missing and not placeholders,
+        missing_sections=missing,
+        placeholder_sections=tuple(placeholders),
+    )
+
+
+def require_profile_ready(profile: ResearchProfile) -> None:
+    readiness = assess_profile(profile)
+    if readiness.ready:
+        return
+    details: list[str] = []
+    if readiness.missing_sections:
+        details.append("missing: " + ", ".join(readiness.missing_sections))
+    if readiness.placeholder_sections:
+        details.append("still placeholders: " + ", ".join(readiness.placeholder_sections))
+    raise ProjectError(
+        f"Research profile {profile.source_file} is incomplete ({'; '.join(details)}). "
+        "Fill RESEARCH_PROFILE.md or use the same required headings in README.md, "
+        "then rerun `research-radar doctor`."
+    )
 
 
 def read_profile(root: Path) -> tuple[ResearchProfile, SourceFile]:

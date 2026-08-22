@@ -11,6 +11,18 @@
     "sections": {
       "type": "object",
       "minProperties": 1,
+      "required": [
+        "research-question",
+        "framework-and-primitives",
+        "central-mechanism",
+        "method",
+        "key-assumptions",
+        "contribution-delta",
+        "closest-papers",
+        "watch",
+        "exclude",
+        "triage-preferences"
+      ],
       "additionalProperties": {"type": "string"}
     },
     "fingerprint": {"type": "string", "pattern": "^[a-f0-9]{64}$"}

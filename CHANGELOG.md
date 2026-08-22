@@ -4,6 +4,9 @@
 
 - Added bounded single-DOI automatic PDF acquisition with signature/structure validation, automatic text export, and explicit LibKey authentication fallback.
 - Added malformed-BibTeX diagnostics plus explicit persistent/title-fallback identity status and evaluation metrics.
+- Prevented generic repository READMEs from masquerading as research profiles;
+  discovery now requires a complete project distill before network work begins.
+- Added a fresh-wheel GitHub Actions smoke test and public-schema parsing.
 - Added ranked DOI access resolution across OpenAlex, Crossref, LibKey, and the canonical publisher route.
 - Added INFORMS, INFORMS Core, and UTD24 venue presets plus explicit author and venue watch lanes.
 - Added Semantic Scholar forward-citation and reference-neighborhood discovery with optional API-key support and partial-failure isolation.

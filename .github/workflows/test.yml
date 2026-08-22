@@ -4,6 +4,13 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -18,3 +25,36 @@ jobs:
       - run: python -m pip install -e .
       - run: python -m unittest discover -s tests -v
       - run: python -m compileall -q src tests
+      - name: Parse public JSON schemas
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for path in Path("schemas").glob("*.json"):
+              json.loads(path.read_text(encoding="utf-8"))
+          PY
+
+  package-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build wheel and dependency wheelhouse
+        run: python -m pip wheel . --wheel-dir wheelhouse
+      - name: Install wheel into a fresh environment
+        run: |
+          python -m venv /tmp/research-radar-smoke
+          /tmp/research-radar-smoke/bin/python -m pip install \
+            --no-index --find-links=wheelhouse research-radar
+      - name: Exercise installed package
+        run: |
+          cd /tmp
+          /tmp/research-radar-smoke/bin/python - <<'PY'
+          import importlib.metadata
+          import research_radar
+          assert research_radar.__version__ == importlib.metadata.version("research-radar")
+          PY
+          /tmp/research-radar-smoke/bin/research-radar --help >/dev/null
+          /tmp/research-radar-smoke/bin/research-radar init /tmp/radar-demo >/dev/null

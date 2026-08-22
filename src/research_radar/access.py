@@ -29,6 +29,13 @@ VALID_ROUTES = {
 }
 AI_USE_STATUSES = {"allowed", "prohibited", "unknown"}
 ANALYSIS_POLICIES = {"local-test", "strict"}
+VERIFIED_IDENTITY_STATUSES = {
+    "doi-match",
+    "title-match",
+    "visual-doi-match",
+    "visual-title-match",
+}
+VISUAL_IDENTITY_STATUSES = {"visual-doi-match", "visual-title-match"}
 
 
 class AccessError(ValueError):
@@ -45,6 +52,9 @@ class PdfInspection:
     encrypted: bool
     codex_readable: bool
     text_extraction_performed: bool
+    detected_dois: tuple[str, ...]
+    identity_verification: str
+    identity_note: str
 
 
 @dataclass(frozen=True)
@@ -64,6 +74,10 @@ class AcquisitionRecord:
     ai_use_status: str
     analysis_policy: str
     codex_eligible: bool
+    identity_verification: str
+    identity_note: str
+    detected_dois: tuple[str, ...]
+    reading_mode: str
     license_name: str | None
     license_url: str | None
 
@@ -77,6 +91,7 @@ class TextExport:
     pages: int
     text_characters: int
     sha256: str
+    text_sha256: str
     analysis_policy: str
 
 
@@ -123,8 +138,16 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _identity_text(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
 def inspect_pdf(
-    path: str | Path, *, extract_text: bool = True
+    path: str | Path,
+    *,
+    extract_text: bool = True,
+    expected_doi: str | None = None,
+    expected_title: str | None = None,
 ) -> PdfInspection:
     """Validate a PDF and optionally test whether it exposes extractable text."""
     pdf_path = Path(path).expanduser().resolve()
@@ -154,6 +177,40 @@ def inspect_pdf(
         raise AccessError(f"The file is not a readable PDF: {exc}") from exc
 
     text_characters = len(extracted.strip())
+    detected_dois = tuple(
+        dict.fromkeys(
+            normalize_doi(match.group(0))
+            for match in DOI_PATTERN.finditer(extracted)
+        )
+    )
+    normalized_expected = normalize_doi(expected_doi) if expected_doi else None
+    normalized_title = _identity_text(expected_title or "")
+    normalized_text = _identity_text(extracted)
+    if normalized_expected is None:
+        identity_verification = "not-checked"
+        identity_note = "No expected DOI was supplied for identity verification."
+    elif not extract_text:
+        identity_verification = "not-checked-policy"
+        identity_note = "Text extraction was disabled by the selected policy."
+    elif normalized_expected in detected_dois:
+        identity_verification = "doi-match"
+        identity_note = f"The extracted PDF text contains {normalized_expected}."
+    elif (
+        len(normalized_title) >= 24
+        and len(normalized_title.split()) >= 4
+        and normalized_title in normalized_text
+    ):
+        identity_verification = "title-match"
+        identity_note = "The normalized expected title appears in the extracted PDF text."
+    elif text_characters == 0:
+        identity_verification = "pending-visual"
+        identity_note = "The PDF has no extractable text; identity requires visual review or OCR."
+    else:
+        identity_verification = "unverified"
+        identity_note = (
+            "Neither the expected DOI nor the full normalized expected title was found "
+            "in the extracted PDF text."
+        )
     return PdfInspection(
         path=str(pdf_path),
         sha256=sha256_file(pdf_path),
@@ -163,6 +220,9 @@ def inspect_pdf(
         encrypted=encrypted,
         codex_readable=extract_text and text_characters > 0,
         text_extraction_performed=extract_text,
+        detected_dois=detected_dois,
+        identity_verification=identity_verification,
+        identity_note=identity_note,
     )
 
 
@@ -173,6 +233,7 @@ def import_pdf(
     project: str | Path,
     route: str,
     allow_image_only: bool = False,
+    expected_title: str | None = None,
     ai_use_status: str = "unknown",
     analysis_policy: str = "local-test",
     license_name: str | None = None,
@@ -199,7 +260,10 @@ def import_pdf(
         analysis_policy == "strict" and ai_use_status == "prohibited"
     )
     inspection = inspect_pdf(
-        source_path, extract_text=extraction_allowed
+        source_path,
+        extract_text=extraction_allowed,
+        expected_doi=normalized_doi,
+        expected_title=expected_title,
     )
     if (
         extraction_allowed
@@ -209,6 +273,16 @@ def import_pdf(
         raise AccessError(
             "The PDF has no extractable text. Use --allow-image-only to archive it "
             "for later OCR or visual reading."
+        )
+    identity_verified = inspection.identity_verification in VERIFIED_IDENTITY_STATUSES
+    if (
+        extraction_allowed
+        and inspection.codex_readable
+        and not identity_verified
+    ):
+        raise AccessError(
+            f"PDF identity could not be verified for {normalized_doi}: "
+            f"{inspection.identity_note} Refusing to archive it under that DOI."
         )
 
     project_root = Path(project).expanduser().resolve()
@@ -231,7 +305,7 @@ def import_pdf(
 
     relative_file = destination.relative_to(project_root).as_posix()
     record = AcquisitionRecord(
-        schema_version=1,
+        schema_version=2,
         acquired_at=datetime.now(timezone.utc).isoformat(),
         doi=normalized_doi,
         route=route,
@@ -245,12 +319,30 @@ def import_pdf(
         text_extraction_performed=inspection.text_extraction_performed,
         ai_use_status=ai_use_status,
         analysis_policy=analysis_policy,
-        codex_eligible=inspection.codex_readable and extraction_allowed,
+        codex_eligible=(
+            inspection.codex_readable and extraction_allowed and identity_verified
+        ),
+        identity_verification=inspection.identity_verification,
+        identity_note=inspection.identity_note,
+        detected_dois=inspection.detected_dois,
+        reading_mode=(
+            "text"
+            if inspection.codex_readable and identity_verified
+            else (
+                "visual-pending"
+                if inspection.identity_verification == "pending-visual"
+                else "unavailable"
+            )
+        ),
         license_name=license_name,
         license_url=license_url,
     )
 
-    record_value = asdict(record)
+    # Compare the same JSON-native representation that is persisted in the
+    # append-only ledger (dataclass tuples otherwise reload as lists).
+    record_value = json.loads(
+        json.dumps(asdict(record), ensure_ascii=False, sort_keys=True)
+    )
     comparison_fields = tuple(
         key for key in record_value if key not in {"acquired_at", "source_filename"}
     )
@@ -300,6 +392,124 @@ def latest_acquisition_record(
     return matching[-1] if matching else None
 
 
+def confirm_visual_pdf(
+    project: str | Path,
+    *,
+    doi: str,
+    identity_verification: str,
+    pages_reviewed: int,
+    note: str,
+) -> AcquisitionRecord:
+    """Record an explicit all-page visual review of an archived image-only PDF."""
+    if identity_verification not in VISUAL_IDENTITY_STATUSES:
+        raise AccessError(
+            "Visual identity must be visual-doi-match or visual-title-match."
+        )
+    if not note.strip():
+        raise AccessError("A visual-review note is required.")
+    project_root = Path(project).expanduser().resolve()
+    normalized_doi = normalize_doi(doi)
+    previous = latest_acquisition_record(project_root, normalized_doi)
+    if not previous:
+        raise AccessError(f"No archived PDF exists for {normalized_doi}.")
+    if previous.get("identity_verification") != "pending-visual":
+        raise AccessError(
+            "Visual confirmation is only valid for an image-only PDF recorded as "
+            "pending-visual."
+        )
+    if (
+        previous.get("analysis_policy") == "strict"
+        and previous.get("ai_use_status") == "prohibited"
+    ):
+        raise AccessError(
+            "Strict policy prohibits promoting this PDF for Codex visual reading."
+        )
+    relative_pdf = previous.get("file")
+    if not isinstance(relative_pdf, str):
+        raise AccessError("The access ledger has no valid PDF path.")
+    pdf_path = (project_root / relative_pdf).resolve()
+    try:
+        pdf_path.relative_to(project_root)
+    except ValueError as exc:
+        raise AccessError("The access ledger points outside the research project.") from exc
+    inspection = inspect_pdf(pdf_path, extract_text=False)
+    if inspection.sha256 != previous.get("sha256"):
+        raise AccessError("The archived PDF checksum changed before visual confirmation.")
+    if pages_reviewed != inspection.pages:
+        raise AccessError(
+            f"Visual confirmation requires all {inspection.pages} page(s); "
+            f"received {pages_reviewed}."
+        )
+    updated = dict(previous)
+    updated.update(
+        {
+            "schema_version": 2,
+            "acquired_at": datetime.now(timezone.utc).isoformat(),
+            "codex_eligible": True,
+            "identity_verification": identity_verification,
+            "identity_note": note.strip(),
+            "reading_mode": "visual",
+        }
+    )
+    ledger = project_root / ".research-radar" / "access-ledger.jsonl"
+    with ledger.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(updated, ensure_ascii=False, sort_keys=True))
+        stream.write("\n")
+    updated["detected_dois"] = tuple(updated.get("detected_dois") or ())
+    return AcquisitionRecord(**updated)
+
+
+def verified_pdf_path(project: str | Path, doi: str) -> Path | None:
+    """Return an archived PDF only when identity, containment, and checksum verify."""
+    project_root = Path(project).expanduser().resolve()
+    normalized_doi = normalize_doi(doi)
+    record = latest_acquisition_record(project_root, normalized_doi)
+    if (
+        not record
+        or not record.get("codex_eligible")
+        or record.get("identity_verification") not in VERIFIED_IDENTITY_STATUSES
+    ):
+        return None
+    relative_pdf = record.get("file")
+    if not isinstance(relative_pdf, str):
+        return None
+    pdf_path = (project_root / relative_pdf).resolve()
+    try:
+        pdf_path.relative_to(project_root)
+    except ValueError:
+        return None
+    if not pdf_path.is_file() or sha256_file(pdf_path) != record.get("sha256"):
+        return None
+    return pdf_path
+
+
+def verified_text_path(project: str | Path, doi: str) -> Path | None:
+    """Return exported text only when its PDF and sidecar checksums still verify."""
+    project_root = Path(project).expanduser().resolve()
+    normalized_doi = normalize_doi(doi)
+    record = latest_acquisition_record(project_root, normalized_doi)
+    if not record:
+        return None
+    if verified_pdf_path(project_root, normalized_doi) is None:
+        return None
+    stem = Path(paper_filename(normalized_doi)).stem
+    text_path = project_root / ".research-radar" / "texts" / f"{stem}.txt"
+    sidecar = text_path.with_suffix(".json")
+    if not text_path.is_file() or not sidecar.is_file():
+        return None
+    try:
+        metadata = json.loads(sidecar.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    if (
+        metadata.get("doi") != normalized_doi
+        or metadata.get("sha256") != record.get("sha256")
+        or metadata.get("text_sha256") != sha256_file(text_path)
+    ):
+        return None
+    return text_path
+
+
 def export_pdf_text(
     project: str | Path,
     *,
@@ -331,6 +541,16 @@ def export_pdf_text(
     except ValueError as exc:
         raise AccessError("The access ledger points outside the research project.") from exc
     inspection = inspect_pdf(pdf_path)
+    recorded_sha256 = record.get("sha256")
+    if recorded_sha256 and inspection.sha256 != recorded_sha256:
+        raise AccessError(
+            f"The archived PDF checksum for {normalized_doi} no longer matches its ledger record."
+        )
+    if record.get("identity_verification") not in VERIFIED_IDENTITY_STATUSES:
+        raise AccessError(
+            f"The archived PDF for {normalized_doi} lacks verified DOI/title identity; "
+            "re-import it with the current Research Radar version."
+        )
     reader = PdfReader(str(pdf_path))
     page_text = [
         f"\n\n--- Page {index} ---\n\n{page.extract_text() or ''}"
@@ -353,6 +573,13 @@ def export_pdf_text(
         pages=inspection.pages,
         text_characters=len(text),
         sha256=inspection.sha256,
+        text_sha256=sha256_file(destination),
         analysis_policy=str(record.get("analysis_policy") or "legacy"),
     )
+    sidecar = destination.with_suffix(".json")
+    sidecar_payload = json.dumps(
+        asdict(result), ensure_ascii=False, indent=2, sort_keys=True
+    ) + "\n"
+    if not sidecar.is_file() or sidecar.read_text(encoding="utf-8") != sidecar_payload:
+        sidecar.write_text(sidecar_payload, encoding="utf-8")
     return destination, result, duplicate

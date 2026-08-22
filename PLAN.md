@@ -212,8 +212,10 @@ Deliverables:
 - LibKey resolver;
 - U of T OpenAthens/EBSCO handoff for individual user-initiated requests;
 - optional integration or code reuse from `paper-access-router`;
-- PDF acquisition ledger with source, timestamp, license/access route, and checksum;
+- PDF acquisition ledger with source, timestamp, license/access route, PDF/text
+  checksums, and DOI/title identity verification;
 - separate technical-readability and AI-use-permission states;
+- explicit image-only visual-review state with all-page confirmation;
 - safe download limits and explicit manual-authentication boundary.
 
 Acceptance criteria:

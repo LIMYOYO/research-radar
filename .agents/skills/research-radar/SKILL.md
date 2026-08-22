@@ -54,6 +54,12 @@ discovery:
    that paper. If institutional sign-in, Duo, CAPTCHA, or another interactive
    step appears, leave the page for the researcher; do not request, inspect,
    enter, or store credentials, responses, cookies, or tokens.
+   If import reports `pending-visual`, use the PDF visual-reading capability to
+   inspect every page and visibly match the DOI or full title. Then and only
+   then run `research-radar access confirm-visual DOI --identity
+   visual-doi-match|visual-title-match --pages-reviewed N --note 'evidence'
+   --project /absolute/project/path`. If visual reading is unavailable or any
+   page was not reviewed, leave the paper pending and do not deep-distill it.
 6. Run the selected item's `distill_context` command. Read
    [references/distillation.md](references/distillation.md), use the strongest
    evidence actually present, create one schema-valid JSON distillation under
@@ -81,8 +87,10 @@ Build the evidence packet before deep reading:
 research-radar distill context IDENTITY --project /absolute/project/path
 ```
 
-If the packet exposes an eligible local PDF but no text file, run its
-`full_text_export_command`, then read the page-delimited text. Produce one JSON
+If the packet exposes `reading_mode: text` and an eligible local PDF but no text
+file, run its `full_text_export_command`, then read the page-delimited text. If
+it exposes `reading_mode: visual`, read the complete local PDF visually and do
+not invent an exported text path. Produce one JSON
 object matching the repository's `schemas/distillation.schema.json`, save it
 under the private `.research-radar/` directory, and validate/persist it with:
 
@@ -96,8 +104,10 @@ deep result replaces the shallow baseline card. Do not claim completion of a
 deep read if the import is rejected.
 
 Before claiming `full-text`, verify that the acquisition output contains the
-requested DOI, a local PDF path, a local text path, page count, checksum, and
-`codex_eligible: true` in the ledger. A link label, browser viewer, or provider
+requested DOI, a local PDF path, page count, checksum, a verified DOI/title
+identity, and `codex_eligible: true` in the ledger. Text mode additionally
+requires a checksummed local text sidecar; visual mode requires an explicit
+all-page confirmation record. A link label, browser viewer, or provider
 availability flag alone is insufficient.
 
 In a briefing, interpret `access_status` only as provider-reported availability.

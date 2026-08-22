@@ -15,11 +15,13 @@ from pathlib import Path
 from .access import (
     UOFT_EBSCO_URL,
     AccessError,
+    confirm_visual_pdf,
     doi_url,
     export_pdf_text,
     import_pdf,
     inspect_pdf,
     libkey_url,
+    normalize_doi,
 )
 from .acquisition import DEFAULT_MAX_BYTES, acquire_pdf
 from .config import load_config
@@ -248,11 +250,31 @@ def build_parser() -> argparse.ArgumentParser:
         "--license-name", help="License or terms label, such as CC BY 4.0."
     )
     import_command.add_argument("--license-url")
+    import_command.add_argument(
+        "--expected-title",
+        help="Expected article title; otherwise use the matching stored candidate title.",
+    )
 
     verify = access_subparsers.add_parser(
         "verify", help="Check that a local PDF can be parsed and read by Codex."
     )
     verify.add_argument("pdf", type=Path)
+    verify.add_argument("--doi", help="Expected DOI for identity verification.")
+    verify.add_argument("--title", help="Expected title for identity verification.")
+
+    visual = access_subparsers.add_parser(
+        "confirm-visual",
+        help="Record an all-page visual review of an archived image-only PDF.",
+    )
+    visual.add_argument("doi")
+    visual.add_argument("--project", type=Path, default=Path.cwd())
+    visual.add_argument(
+        "--identity",
+        choices=("visual-doi-match", "visual-title-match"),
+        required=True,
+    )
+    visual.add_argument("--pages-reviewed", type=int, required=True)
+    visual.add_argument("--note", required=True)
 
     path = access_subparsers.add_parser(
         "path", help="Print the private local paper directory for a project."
@@ -425,6 +447,15 @@ def _open_or_print(url: str, print_only: bool) -> int:
 
 def _progress(message: str) -> None:
     print(f"[research-radar] {message}", file=sys.stderr, flush=True)
+
+
+def _stored_candidate_title(project: Path, doi: str) -> str | None:
+    normalized = normalize_doi(doi)
+    for item in load_candidates(project):
+        if item.get("doi") and normalize_doi(str(item["doi"])) == normalized:
+            title = item.get("title")
+            return str(title) if title else None
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -852,10 +883,12 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
                 return 0
-            candidate = candidates.get(args.identity)
-            if candidate is None:
-                raise ValueError(f"Unknown candidate identity for this project: {args.identity}")
             if args.distill_command == "context":
+                candidate = candidates.get(args.identity)
+                if candidate is None:
+                    raise ValueError(
+                        f"Unknown candidate identity for this project: {args.identity}"
+                    )
                 print(
                     json.dumps(
                         build_context(snapshot, candidate),
@@ -868,6 +901,16 @@ def main(argv: list[str] | None = None) -> int:
             payload = json.loads(
                 args.json_file.expanduser().read_text(encoding="utf-8")
             )
+            identity = (
+                str(payload.get("candidate_identity"))
+                if isinstance(payload, dict) and payload.get("candidate_identity")
+                else ""
+            )
+            candidate = candidates.get(identity)
+            if candidate is None:
+                raise ValueError(
+                    f"Unknown candidate identity for this project: {identity or '(missing)'}"
+                )
             normalized = validate_for_project(
                 payload,
                 project=args.project,
@@ -901,9 +944,24 @@ def main(argv: list[str] | None = None) -> int:
             return _open_or_print(url, args.print_only)
 
         if args.command == "access" and args.access_command == "verify":
-            inspection = inspect_pdf(args.pdf)
+            inspection = inspect_pdf(
+                args.pdf,
+                expected_doi=args.doi,
+                expected_title=args.title,
+            )
             print(json.dumps(asdict(inspection), indent=2, sort_keys=True))
             return 0 if inspection.codex_readable else 2
+
+        if args.command == "access" and args.access_command == "confirm-visual":
+            record = confirm_visual_pdf(
+                args.project,
+                doi=args.doi,
+                identity_verification=args.identity,
+                pages_reviewed=args.pages_reviewed,
+                note=args.note,
+            )
+            print(json.dumps(asdict(record), indent=2, ensure_ascii=False, sort_keys=True))
+            return 0
 
         if args.command == "access" and args.access_command == "path":
             destination = args.project.expanduser().resolve() / ".research-radar" / "papers"
@@ -945,6 +1003,7 @@ def main(argv: list[str] | None = None) -> int:
                 project=args.project,
                 analysis_policy=args.analysis_policy,
                 max_bytes=args.max_mb * 1024 * 1024,
+                expected_title=_stored_candidate_title(args.project, args.doi),
             )
             print(
                 json.dumps(
@@ -969,6 +1028,10 @@ def main(argv: list[str] | None = None) -> int:
                 project=args.project,
                 route=args.route,
                 allow_image_only=args.allow_image_only,
+                expected_title=(
+                    args.expected_title
+                    or _stored_candidate_title(args.project, args.doi)
+                ),
                 ai_use_status=args.ai_use_status,
                 analysis_policy=args.analysis_policy,
                 license_name=args.license_name,

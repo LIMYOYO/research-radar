@@ -6,9 +6,10 @@ The first Research Radar milestone is deliberately narrow:
 > article PDF through a permitted route, archive it locally, and make it
 > available for private local analysis under the selected analysis policy.
 
-Authentication and the final single-article download remain in the user's
-browser. Research Radar never receives UTORid credentials, Duo responses,
-cookies, or a reusable download token.
+Interactive authentication remains in the user's browser. Once that session is
+authorized, the skill may click the final single-article download control.
+Research Radar never receives UTORid credentials, Duo responses, cookies, or a
+reusable download token.
 
 ## Install the local CLI
 
@@ -82,9 +83,22 @@ project `.gitignore` is used.
   /path/to/my-research-project/.research-radar/papers/10.1287_mnsc.2025.00819.pdf
 ```
 
-Success requires a structurally valid, unencrypted PDF with extractable text.
-An image-only PDF can be archived with `--allow-image-only`, but it is explicitly
-marked as not text-readable and requires OCR or visual reading later.
+Success requires a structurally valid, unencrypted PDF with extractable text
+whose DOI or full normalized title matches the requested candidate. A readable
+but mismatched PDF is rejected before it reaches the ledger. Exported text has a
+sidecar binding its own checksum to the archived PDF checksum.
+
+An image-only PDF can be archived with `--allow-image-only`, but it remains
+`pending-visual` and ineligible for full-text claims. After a PDF-capable reader
+visibly verifies the DOI/title and reviews every page, record the review:
+
+```sh
+.venv/bin/research-radar access confirm-visual 10.1287/example \
+  --identity visual-doi-match \
+  --pages-reviewed 12 \
+  --note 'DOI visible on page 1; all 12 pages reviewed' \
+  --project /path/to/my-research-project
+```
 
 Technical readability and source terms are recorded as different fields.
 During private prototype evaluation, `--analysis-policy local-test` is the
@@ -113,6 +127,8 @@ For a clearly licensed open-access paper, record the license explicitly:
 | Repeated import under the same policy | Either DOI | No duplicate PDF or ledger entry; changing policy may append one audit record without copying the PDF |
 | Missing full text | Any DOI | Route failure is reported; no fake PDF record is written |
 | Encrypted or invalid file | Any DOI | Import fails with an actionable error |
+| Valid PDF for the wrong article | Any DOI | DOI/title identity check rejects it before archival |
+| Image-only PDF | Any DOI | Remains `pending-visual` until an explicit all-page visual confirmation |
 | Public URL returns HTML/403 | Any DOI | No ledger is written; the result is `authentication-required` with a LibKey handoff |
 | Oversized response | Any DOI | Streaming stops at the configured `--max-mb` limit |
 

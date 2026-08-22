@@ -40,6 +40,23 @@ research-radar access import /absolute/path/to/new.pdf \
 research-radar access text DOI --project /absolute/project/path
 ```
 
+If the PDF is image-only, repeat import with `--allow-image-only`. The ledger
+must remain `pending-visual` and ineligible until the PDF visual-reading
+capability has inspected every page and visibly matched the expected DOI or
+full title. Record that completed review with:
+
+```sh
+research-radar access confirm-visual DOI \
+  --identity visual-doi-match \
+  --pages-reviewed N \
+  --note 'DOI visible on page 1; all N pages reviewed visually' \
+  --project /absolute/project/path
+```
+
+Use `visual-title-match` only when the complete expected title, rather than the
+DOI, is visible. Never issue this confirmation from filename or browser state
+alone.
+
 If an explicit open license is visible in the paper, record its name and URL
 and set `--ai-use-status allowed`. Otherwise keep `unknown`; local-test is the
 private prototype policy requested for this project.
@@ -49,7 +66,7 @@ Do not call the chain complete until output proves:
 - normalized DOI matches;
 - PDF and text paths are inside `.research-radar/`;
 - PDF structure is readable and has at least one page;
-- text export is nonempty;
+- text export is nonempty, or an all-page visual confirmation is recorded;
 - checksum and acquisition route are recorded;
 - `codex_eligible` is true under the selected local policy.
 

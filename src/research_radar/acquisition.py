@@ -15,6 +15,7 @@ from .access import (
     import_pdf,
     latest_acquisition_record,
     normalize_doi,
+    VERIFIED_IDENTITY_STATUSES,
 )
 from .resolution import AccessOption, AccessResolution, resolve_access
 
@@ -52,6 +53,8 @@ class AutomaticAcquisition:
     pages: int | None
     text_characters: int | None
     codex_eligible: bool
+    identity_verification: str | None
+    reading_mode: str | None
     attempts: tuple[AcquisitionAttempt, ...]
     handoff_url: str | None
     resolver_errors: tuple[str, ...]
@@ -166,17 +169,19 @@ def acquire_pdf(
     timeout: float = 30.0,
     resolution: AccessResolution | None = None,
     downloader: Downloader = download_candidate,
+    expected_title: str | None = None,
 ) -> AutomaticAcquisition:
     """Acquire exactly one DOI, or return an explicit browser-authentication handoff."""
     normalized = normalize_doi(doi)
     root = Path(project).expanduser().resolve()
+    attempts: list[AcquisitionAttempt] = []
     existing = latest_acquisition_record(root, normalized)
     existing_pdf = _recorded_pdf(root, existing) if existing else None
     if existing and existing_pdf:
         restriction = _policy_restriction(existing, analysis_policy)
         if restriction:
             return AutomaticAcquisition(
-                schema_version=1,
+                schema_version=2,
                 doi=normalized,
                 status="unavailable",
                 pdf_file=None,
@@ -187,6 +192,16 @@ def acquire_pdf(
                 pages=None,
                 text_characters=None,
                 codex_eligible=False,
+                identity_verification=(
+                    str(existing.get("identity_verification"))
+                    if existing.get("identity_verification")
+                    else None
+                ),
+                reading_mode=(
+                    str(existing.get("reading_mode"))
+                    if existing.get("reading_mode")
+                    else None
+                ),
                 attempts=(
                     AcquisitionAttempt(
                         route="local-ledger",
@@ -198,30 +213,79 @@ def acquire_pdf(
                 handoff_url=None,
                 resolver_errors=(),
             )
-        if not existing.get("codex_eligible") and analysis_policy == "local-test":
-            _, refreshed, _ = import_pdf(
-                existing_pdf,
-                doi=normalized,
-                project=root,
-                route=str(existing.get("route") or "manual"),
-                ai_use_status=str(existing.get("ai_use_status") or "unknown"),
-                analysis_policy=analysis_policy,
-                license_name=(
-                    str(existing["license_name"])
-                    if existing.get("license_name")
-                    else None
-                ),
-                license_url=(
-                    str(existing["license_url"])
-                    if existing.get("license_url")
-                    else None
-                ),
-            )
-            existing = asdict(refreshed)
+        identity_verified = (
+            existing.get("identity_verification") in VERIFIED_IDENTITY_STATUSES
+        )
+        if (
+            analysis_policy == "local-test"
+            and (not existing.get("codex_eligible") or not identity_verified)
+        ):
+            try:
+                _, refreshed, _ = import_pdf(
+                    existing_pdf,
+                    doi=normalized,
+                    project=root,
+                    route=str(existing.get("route") or "manual"),
+                    expected_title=expected_title,
+                    ai_use_status=str(existing.get("ai_use_status") or "unknown"),
+                    analysis_policy=analysis_policy,
+                    license_name=(
+                        str(existing["license_name"])
+                        if existing.get("license_name")
+                        else None
+                    ),
+                    license_url=(
+                        str(existing["license_url"])
+                        if existing.get("license_url")
+                        else None
+                    ),
+                )
+                existing = asdict(refreshed)
+            except AccessError as exc:
+                attempts.append(
+                    AcquisitionAttempt(
+                        route="local-ledger",
+                        url=existing_pdf.as_uri(),
+                        status="failed",
+                        detail=f"Existing PDF identity refresh failed: {exc}",
+                    )
+                )
+                existing = None
         if existing.get("codex_eligible"):
+            if existing.get("reading_mode") == "visual":
+                return AutomaticAcquisition(
+                    schema_version=2,
+                    doi=normalized,
+                    status="existing",
+                    pdf_file=existing_pdf.relative_to(root).as_posix(),
+                    text_file=None,
+                    route=str(existing.get("route") or "existing"),
+                    license=(
+                        str(existing.get("license_name"))
+                        if existing.get("license_name")
+                        else None
+                    ),
+                    sha256=(
+                        str(existing.get("sha256"))
+                        if existing.get("sha256")
+                        else None
+                    ),
+                    pages=(
+                        int(existing["pages"])
+                        if existing.get("pages") is not None
+                        else None
+                    ),
+                    text_characters=0,
+                    codex_eligible=True,
+                    identity_verification=str(existing.get("identity_verification")),
+                    reading_mode="visual",
+                    attempts=tuple(attempts),
+                    handoff_url=None,
+                    resolver_errors=(),
+                )
             text_path, export, _ = export_pdf_text(root, doi=normalized)
             return AutomaticAcquisition(
-                schema_version=1,
+                schema_version=2,
                 doi=normalized,
                 status="existing",
                 pdf_file=existing_pdf.relative_to(root).as_posix(),
@@ -232,6 +296,8 @@ def acquire_pdf(
                 pages=int(existing["pages"]) if existing.get("pages") is not None else export.pages,
                 text_characters=export.text_characters,
                 codex_eligible=bool(existing.get("codex_eligible")),
+                identity_verification=str(existing.get("identity_verification")),
+                reading_mode=str(existing.get("reading_mode") or "text"),
                 attempts=(),
                 handoff_url=None,
                 resolver_errors=(),
@@ -241,7 +307,6 @@ def acquire_pdf(
         normalized,
         cache_dir=root / ".research-radar" / "cache" / "access",
     )
-    attempts: list[AcquisitionAttempt] = []
     with tempfile.TemporaryDirectory(prefix="research-radar-acquire-") as temporary:
         candidate_path = Path(temporary) / "candidate.pdf"
         for option in _download_options(resolution):
@@ -253,6 +318,7 @@ def acquire_pdf(
                     doi=normalized,
                     project=root,
                     route=route,
+                    expected_title=expected_title,
                     ai_use_status="allowed" if option.license else "unknown",
                     analysis_policy=analysis_policy,
                     license_name=option.license,
@@ -269,7 +335,7 @@ def acquire_pdf(
                     )
                 )
                 return AutomaticAcquisition(
-                    schema_version=1,
+                    schema_version=2,
                     doi=normalized,
                     status="existing" if duplicate else "acquired",
                     pdf_file=destination.relative_to(root).as_posix(),
@@ -280,6 +346,8 @@ def acquire_pdf(
                     pages=record.pages,
                     text_characters=export.text_characters,
                     codex_eligible=record.codex_eligible,
+                    identity_verification=record.identity_verification,
+                    reading_mode=record.reading_mode,
                     attempts=tuple(attempts),
                     handoff_url=None,
                     resolver_errors=resolution.errors,
@@ -297,7 +365,7 @@ def acquire_pdf(
 
     handoff = _handoff(resolution)
     return AutomaticAcquisition(
-        schema_version=1,
+        schema_version=2,
         doi=normalized,
         status="authentication-required" if handoff else "unavailable",
         pdf_file=None,
@@ -308,6 +376,8 @@ def acquire_pdf(
         pages=None,
         text_characters=None,
         codex_eligible=False,
+        identity_verification=None,
+        reading_mode=None,
         attempts=tuple(attempts),
         handoff_url=handoff,
         resolver_errors=resolution.errors,

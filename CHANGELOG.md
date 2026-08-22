@@ -20,6 +20,10 @@
   limits, and no retries for permanent HTTP failures.
 - Stopped inferring that every forward citation `extends` a seed; citation edges
   now require textual or deep-reading evidence before that relationship label.
+- Added DOI/full-title PDF identity verification, PDF/text checksum binding,
+  and explicit all-page visual confirmation for image-only papers.
+- Fixed the CLI distillation-import path and completed a live U of T/LibKey/
+  EBSCO acquisition plus full-text distillation for an INFORMS article.
 
 ## 0.2.0 — 2026-08-21
 

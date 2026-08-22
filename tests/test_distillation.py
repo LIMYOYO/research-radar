@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 
+from research_radar.cli import main
 from research_radar.discovery import Candidate
 from research_radar.distillation import (
     DistillationError,
@@ -97,6 +101,16 @@ class DistillationTests(unittest.TestCase):
             self.assertEqual(hydrated.scores["distillation_confidence"], 0.8)
             context = build_context(snapshot, paper)
             self.assertEqual(context["available_evidence"]["levels"], ["metadata", "abstract"])
+
+            json_file = root / "distillation.json"
+            json_file.write_text(json.dumps(payload()), encoding="utf-8")
+            output = StringIO()
+            with redirect_stdout(output):
+                exit_code = main(
+                    ["distill", "import", str(json_file), "--project", str(root)]
+                )
+            self.assertEqual(exit_code, 0)
+            self.assertTrue(json.loads(output.getvalue())["saved"])
 
     def test_full_text_claim_requires_local_eligible_evidence(self) -> None:
         paper = candidate()

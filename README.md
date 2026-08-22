@@ -185,13 +185,18 @@ The first access vertical slice is complete when it can:
 - open the U of T OpenAthens/EBSCO session route without touching credentials;
 - route one current INFORMS DOI through LibKey or the authorized provider;
 - import the downloaded PDF into `.research-radar/papers/`;
-- validate that the file is an unencrypted, structurally valid PDF;
+- validate that the file is an unencrypted, structurally valid PDF and that its
+  extracted DOI or full title matches the requested paper;
 - verify that Codex can extract text under the selected `local-test` or `strict`
   analysis policy;
-- record DOI, route, timestamp, checksum, page count, technical readability,
-  license, and AI-use eligibility;
+- record DOI, identity proof, route, timestamp, PDF/text checksums, page count,
+  reading mode, technical readability, license, and AI-use eligibility;
 - avoid duplicate files and ledger entries on repeated import;
 - complete the same pipeline for one open-access control paper.
+
+Image-only PDFs remain `pending-visual` until a visual reader verifies the DOI
+or complete title and reviews every page. They are never promoted to full-text
+evidence from a filename or browser label alone.
 
 Project profiling, discovery, ranking, and reporting begin only after this gate
 passes with a real subscription PDF and a license-aware alternative-copy path.

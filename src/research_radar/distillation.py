@@ -5,10 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from .access import paper_filename
+from .access import latest_acquisition_record, verified_pdf_path, verified_text_path
 from .discovery import Candidate
 from .project import ProjectSnapshot
-from .ranking import load_local_access
 
 
 class DistillationError(ValueError):
@@ -105,30 +104,36 @@ def available_evidence(project: str | Path, candidate: Candidate) -> dict[str, A
     levels = ["metadata"]
     if candidate.abstract:
         levels.append("abstract")
-    local_record = load_local_access(root).get(candidate.doi or "")
     pdf_file: str | None = None
     text_file: str | None = None
-    if local_record and local_record.get("codex_eligible"):
-        relative_pdf = local_record.get("file")
-        if isinstance(relative_pdf, str) and (root / relative_pdf).is_file():
+    reading_mode: str | None = None
+    if candidate.doi:
+        local_record = latest_acquisition_record(root, candidate.doi)
+        candidate_pdf = verified_pdf_path(root, candidate.doi)
+        if candidate_pdf is not None:
             levels.append("full-text")
-            pdf_file = relative_pdf
-        if candidate.doi:
-            candidate_text = (
-                root
-                / ".research-radar"
-                / "texts"
-                / f"{Path(paper_filename(candidate.doi)).stem}.txt"
+            pdf_file = candidate_pdf.relative_to(root).as_posix()
+            reading_mode = (
+                str(local_record.get("reading_mode"))
+                if local_record and local_record.get("reading_mode")
+                else "text"
             )
-            if candidate_text.is_file():
-                text_file = candidate_text.relative_to(root).as_posix()
+        candidate_text = verified_text_path(root, candidate.doi)
+        if candidate_text is not None:
+            text_file = candidate_text.relative_to(root).as_posix()
     return {
         "levels": levels,
         "local_pdf": pdf_file,
         "local_text": text_file,
+        "reading_mode": reading_mode,
         "full_text_export_command": (
             f"research-radar access text {candidate.doi} --project {root}"
-            if "full-text" in levels and not text_file and candidate.doi
+            if (
+                "full-text" in levels
+                and reading_mode != "visual"
+                and not text_file
+                and candidate.doi
+            )
             else None
         ),
     }

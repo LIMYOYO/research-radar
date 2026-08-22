@@ -33,7 +33,9 @@ def readable_pdf() -> bytes:
         }
     )
     content = DecodedStreamObject()
-    content.set_data(b"BT /F1 12 Tf 72 720 Td (Automatically acquired paper) Tj ET")
+    content.set_data(
+        b"BT /F1 12 Tf 72 720 Td (Automatically acquired paper 10.5555/automatic) Tj ET"
+    )
     page[NameObject("/Contents")] = writer._add_object(content)
     writer.write(stream)
     return stream.getvalue()
@@ -156,6 +158,7 @@ class AcquisitionTests(unittest.TestCase):
             self.assertEqual(first.pages, 1)
             self.assertGreater(first.text_characters or 0, 20)
             self.assertTrue(first.codex_eligible)
+            self.assertEqual(first.identity_verification, "doi-match")
             self.assertEqual(len(calls), 1)
             self.assertTrue((root / str(first.pdf_file)).is_file())
             self.assertTrue((root / str(first.text_file)).is_file())

@@ -15,12 +15,14 @@
     "pages",
     "text_characters",
     "codex_eligible",
+    "identity_verification",
+    "reading_mode",
     "attempts",
     "handoff_url",
     "resolver_errors"
   ],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"const": 2},
     "doi": {"type": "string", "pattern": "^10\\."},
     "status": {"enum": ["acquired", "existing", "authentication-required", "unavailable"]},
     "pdf_file": {"type": ["string", "null"]},
@@ -29,8 +31,13 @@
     "license": {"type": ["string", "null"]},
     "sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
     "pages": {"type": ["integer", "null"], "minimum": 1},
-    "text_characters": {"type": ["integer", "null"], "minimum": 1},
+    "text_characters": {"type": ["integer", "null"], "minimum": 0},
     "codex_eligible": {"type": "boolean"},
+    "identity_verification": {
+      "type": ["string", "null"],
+      "enum": ["doi-match", "title-match", "visual-doi-match", "visual-title-match", "pending-visual", "unverified", "not-checked", "not-checked-policy", null]
+    },
+    "reading_mode": {"enum": ["text", "visual", "visual-pending", "unavailable", null]},
     "attempts": {
       "type": "array",
       "items": {
@@ -54,12 +61,13 @@
       "then": {
         "properties": {
           "pdf_file": {"type": "string"},
-          "text_file": {"type": "string"},
+          "text_file": {"type": ["string", "null"]},
           "route": {"type": "string"},
           "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
           "pages": {"type": "integer", "minimum": 1},
           "text_characters": {"type": "integer", "minimum": 1},
           "codex_eligible": {"const": true},
+          "identity_verification": {"enum": ["doi-match", "title-match", "visual-doi-match", "visual-title-match"]},
           "handoff_url": {"type": "null"}
         }
       }
@@ -75,6 +83,36 @@
           "pages": {"type": "null"},
           "text_characters": {"type": "null"},
           "codex_eligible": {"const": false}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {"enum": ["acquired", "existing"]},
+          "reading_mode": {"const": "text"}
+        },
+        "required": ["status", "reading_mode"]
+      },
+      "then": {
+        "properties": {
+          "text_file": {"type": "string"},
+          "text_characters": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {"enum": ["acquired", "existing"]},
+          "reading_mode": {"const": "visual"}
+        },
+        "required": ["status", "reading_mode"]
+      },
+      "then": {
+        "properties": {
+          "text_file": {"type": "null"},
+          "text_characters": {"const": 0}
         }
       }
     }

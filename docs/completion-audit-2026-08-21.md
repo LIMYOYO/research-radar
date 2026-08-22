@@ -20,7 +20,7 @@ Run from the repository root:
 
 Observed on 2026-08-21:
 
-- 64 tests passed;
+- 67 tests passed;
 - all source and test modules compiled;
 - the repository skill validated;
 - a version 0.2.0 wheel installed and initialized a project in a fresh Python
@@ -31,7 +31,7 @@ Observed on 2026-08-21:
   contract coverage, and a 0% duplicate-identity rate;
 - a live Semantic Scholar probe accepted the actual API response shape and
   exposed publisher-elided references as an adapter coverage gap;
-- the two-paper U of T/INFORMS access result remains documented in
+- the three-paper U of T/INFORMS access result remains documented in
   `docs/access-validation-2026-08-21.md`.
 
 ## Read-only real-project preflight
@@ -48,7 +48,7 @@ invocation from silently searching on a generic repository description.
 
 | Milestone | Engineering status | Evidence or remaining condition |
 | --- | --- | --- |
-| A0 / M3 access | Complete for the intended one-paper workflow | Subscription and open-access PDFs were imported, validated, deduplicated, recorded, and exported to page-delimited text. `access acquire` now attempts one bounded public/OA download and automatically exports successful text; 403/HTML responses return a clean LibKey handoff. The live U of T browser chain was repeated without another Duo prompt. Interactive authentication remains a deliberate human boundary. |
+| A0 / M3 access | Complete for the intended one-paper workflow | Subscription and open-access PDFs were imported, identity-verified, deduplicated, recorded, and exported with PDF/text checksum binding. `access acquire` attempts one bounded public/OA download; 403/HTML responses return a clean LibKey handoff. Image-only files require explicit all-page visual confirmation. The live U of T browser chain was repeated without another Duo prompt and a selected INFORMS paper was full-text distilled. Interactive authentication remains a deliberate human boundary. |
 | M0 specification | Engineering fixtures complete; user validation pending | Schemas, synthetic project, feedback vocabulary, and 20 judged candidates exist. An open-source-safe fixture now preserves the nested/multi-file dependency shapes observed in private projects while replacing every substantive field. Confirmation that two researchers can fill the profile without help remains external. |
 | M1 ingestion | Complete for the tested scope | TeX dependencies, referenced BibTeX files, 20 DOI normalization cases, DOI/arXiv identities, explicit title-fallback status, malformed-BibTeX diagnostics, duplicates, fingerprints, SQLite migration, idempotence, explicit profile-change approval, and rejection of generic READMEs as research profiles are tested. |
 | M2 discovery | Complete for the local beta | Crossref, OpenAlex, and Semantic Scholar run behind isolated adapters. Forward citations, related works, backward references, keywords, authors, venues, INFORMS/UTD24 presets, deduplication, caching, bounded `Retry-After`, per-provider success watermarks, material-update detection, provenance, and partial failures are implemented. Provider coverage remains inherently incomplete. |

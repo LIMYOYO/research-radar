@@ -7,7 +7,7 @@ from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
 
-from research_radar.cli import main
+from research_radar.cli import _stored_candidate_title, main
 from research_radar.discovery import Candidate
 from research_radar.project import ingest_project
 from research_radar.ranking import rank_candidates
@@ -342,6 +342,10 @@ class RankingAndReportingTests(unittest.TestCase):
             self.assertFalse(updates)
             self.assertEqual(second_new_count, 0)
             self.assertEqual(second_updates, (initial.identity,))
+            self.assertEqual(
+                _stored_candidate_title(root, "10.5555/update"),
+                enriched.title,
+            )
             stored_manifest = latest_discovery_manifest(root)
             self.assertIsNotNone(stored_manifest)
             assert stored_manifest is not None

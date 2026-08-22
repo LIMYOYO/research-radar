@@ -11,7 +11,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Iterable
 
-from .access import paper_filename
+from .access import verified_pdf_path, verified_text_path
 from .config import load_config
 from .discovery import Candidate, profile_queries
 from .project import ProjectSnapshot, normalize_title
@@ -239,25 +239,11 @@ def _with_access(
 ) -> Candidate:
     if not candidate.doi or candidate.doi not in records:
         return replace(candidate, local_access_status="none")
-    record = records[candidate.doi]
     root = Path(project).expanduser().resolve()
-    relative_pdf = record.get("file")
-    if not record.get("codex_eligible") or not isinstance(relative_pdf, str):
+    if verified_pdf_path(root, candidate.doi) is None:
         return replace(candidate, local_access_status="none")
-    pdf_path = (root / relative_pdf).resolve()
-    try:
-        pdf_path.relative_to(root)
-    except ValueError:
-        return replace(candidate, local_access_status="none")
-    if not pdf_path.is_file():
-        return replace(candidate, local_access_status="none")
-    text_path = (
-        root
-        / ".research-radar"
-        / "texts"
-        / f"{Path(paper_filename(candidate.doi)).stem}.txt"
-    )
-    local_status = "text" if text_path.is_file() and text_path.stat().st_size > 0 else "pdf"
+    text_path = verified_text_path(root, candidate.doi)
+    local_status = "text" if text_path is not None else "pdf"
     return replace(candidate, local_access_status=local_status)
 
 

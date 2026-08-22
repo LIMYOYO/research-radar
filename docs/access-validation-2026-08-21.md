@@ -81,3 +81,26 @@ validation/import/text pipeline in both cases.
 
 Alternate-copy resolution remains useful because OpenAlex did not correctly
 identify the OA status of either recent INFORMS test record.
+
+## MobileAED end-to-end revalidation — 2026-08-22
+
+- DOI: `10.1287/msom.2024.1027`
+- Title: *Emergency Drone Deployment and Disposable Defibrillator Allocation:
+  A Modular Capacitated Maximum Covering Location Model*
+- Automatic result: publisher PDF returned HTTP 403; the CLI returned an
+  `authentication-required` LibKey handoff without writing a false ledger row
+- Browser result: LibKey identified University of Toronto and the exact title;
+  the existing EBSCO session opened the article without another Duo prompt
+- Download: one 2,752,377-byte PDF, 35 pages
+- Identity verification: exact DOI found in extracted PDF text
+- PDF SHA-256:
+  `61fd1b9773f42a376961b71976eb96825c509699a3a0ce449cbe85506d90dc7c`
+- Text export: 110,257 page-delimited characters
+- Text SHA-256:
+  `9e31ab37db9328f08cee455726f2de5b2a0dd90709d99375a7eea60d359fb5b8`
+- Downstream result: a schema-validated, full-text project-conditioned
+  distillation was persisted and rehydrated into the MobileAED briefing
+
+This third test proves the complete intended loop: project-aware ranking,
+single-paper institutional handoff, identity-checked local evidence, deep
+distillation, and a regenerated briefing.

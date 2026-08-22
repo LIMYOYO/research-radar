@@ -2,7 +2,7 @@
 
 This audit separates locally reproducible engineering completion from the
 longitudinal product definition of done in `PLAN.md`. A synthetic fixture cannot
-substitute for researcher judgments or four weeks of daily use.
+substitute for researcher judgments or four weeks of real on-demand use.
 
 ## Reproducible evidence
 
@@ -53,18 +53,17 @@ invocation from silently searching on a generic repository description.
 | M1 ingestion | Complete for the tested scope | TeX dependencies, referenced BibTeX files, 20 DOI normalization cases, DOI/arXiv identities, explicit title-fallback status, malformed-BibTeX diagnostics, duplicates, fingerprints, SQLite migration, idempotence, explicit profile-change approval, and rejection of generic READMEs as research profiles are tested. |
 | M2 discovery | Complete for the local beta | Crossref, OpenAlex, and Semantic Scholar run behind isolated adapters. Forward citations, related works, backward references, keywords, authors, venues, INFORMS/UTD24 presets, deduplication, caching, retry, provenance, and partial failures are implemented. Provider coverage remains inherently incomplete. |
 | M4 distillation/ranking | Engineering contract complete; researcher calibration pending | Typed JSON validation, evidence gating, append-only storage, report hydration, paper-type guidance, explainable feature traces, and keyword-baseline lift are implemented. A real 20-paper-per-project calibration set is still required. |
-| M5 reports/feedback | Complete for deterministic local use | Daily delta, empty-day behavior, feedback suppression, audit manifests, weekly synthesis, and full-text queue are tested. Repeated same-window runs are idempotent. |
+| M5 reports/feedback | Complete for deterministic local use | Incremental delta, no-change behavior, feedback suppression, audit manifests, weekly synthesis, and full-text queue are tested. Repeated same-window runs are idempotent. |
 | M6 skill/manual invocation | Complete for the local beta | The skill validates, MobileAED passes project checks and has completed a live run, and incomplete profiles stop before network work or state persistence. The workflow deliberately creates no background schedule. |
-| M7 sharing | Local package complete; public release evidence pending | Wheel installation, docs, schemas, three profile examples, privacy guidance, issue template, contribution guide, changelog, and plugin evaluation exist. No GitHub remote is configured, GitHub CLI is not authenticated, and two external onboarding reports do not yet exist. |
+| M7 sharing | Public beta published; external validation pending | The public repository is available at `https://github.com/LIMYOYO/research-radar`; its first GitHub Actions test run passed. Wheel installation, docs, schemas, three profile examples, privacy guidance, issue template, contribution guide, changelog, and plugin evaluation exist. Two external onboarding reports do not yet exist. |
 
 ## Remaining external gates
 
 Only the following items cannot be honestly completed from the repository alone:
 
-1. authenticate GitHub CLI before pushing the already-created public remote;
-2. collect at least 20 judgments on each of two real projects;
-3. observe four consecutive weeks of useful incremental briefings and record
+1. collect at least 20 judgments on each of two real projects;
+2. observe four consecutive weeks of useful incremental briefings and record
    onboarding friction from the second researcher.
 
-Until those gates are met, version 0.2.0 is an installable local beta, not a
+Until those gates are met, version 0.2.0 is a published public beta, not a
 validated version 1 product.

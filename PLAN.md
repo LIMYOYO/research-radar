@@ -45,7 +45,7 @@ The execution order is now:
 2. **A1:** access robustness, open-access resolution, and institution adapters;
 3. **M0–M2:** research-profile specification, project ingestion, and discovery;
 4. **M4–M5:** project-conditioned distillation, ranking, and briefings;
-5. **M6–M7:** Codex scheduling, open-source packaging, and portability.
+5. **M6–M7:** on-demand Codex skill execution, open-source packaging, and portability.
 
 The detailed one-paper workflow and commands are in
 [`docs/access-first.md`](docs/access-first.md).
@@ -62,7 +62,7 @@ The system therefore needs five coupled capabilities:
 2. graph- and query-based discovery;
 3. legal full-text resolution;
 4. project-conditioned distillation and ranking;
-5. durable state, feedback, and recurring reports.
+5. durable state, feedback, and incremental reports.
 
 The working interpretation of “UTD papers” is the UTD24/top-business-journal universe, including subscription outlets such as INFORMS journals. This should be confirmed with the initial users before venue presets are finalized.
 
@@ -138,7 +138,7 @@ Deliverables:
 
 - repository README and project plan;
 - versioned research-profile schema;
-- daily briefing schema;
+- incremental briefing schema;
 - synthetic project fixture with TeX, BibTeX, and known expected outputs;
 - one open-source-safe structural fixture derived from real project layouts,
   with every research-specific field rewritten as synthetic content;
@@ -257,14 +257,14 @@ Deliverables:
 - feedback capture from Markdown or CLI;
 - suppression rules for known, duplicate, or repeatedly rejected clusters;
 - watchlist for important authors, papers, and unresolved access;
-- weekly synthesis in addition to daily delta.
+- weekly synthesis in addition to the per-run delta.
 
 Acceptance criteria:
 
-- a daily report contains only unseen or materially updated items;
+- an incremental report contains only unseen or materially updated items;
 - user feedback affects the next ranking without erasing audit history;
 - report generation is deterministic from stored candidate/distillation records;
-- empty days produce a concise “no high-signal change” report rather than noise;
+- no-change runs produce a concise “no high-signal change” report rather than noise;
 - all filtered candidates remain auditable.
 
 ### M6 — Codex skill and manual execution
@@ -370,7 +370,7 @@ with the first two real users rather than guessed from the synthetic fixture:
 1. Does the shared venue preset need exactly UTD24 or a broader business-journal set?
 2. What precision-at-five target is realistic for analytical versus empirical projects?
 3. Which private project can supply the first 20-paper judged golden set?
-4. When should a `watch` item escalate between daily runs rather than wait for a weekly review?
+4. When should a `watch` item escalate between invocations rather than wait for a weekly review?
 5. How should collaborators share project profiles and feedback without sharing licensed PDFs?
 
 ## 9. Calibration next actions
@@ -398,7 +398,7 @@ Implemented and tested:
 - cross-source identity merge, caching, retry, and adapter failure isolation;
 - explainable project-conditioned ranking with novelty and priority-risk traces;
 - typed, validated, append-only deep distillations that hydrate later reports;
-- idempotent daily and weekly Markdown briefings and feedback-based suppression;
+- idempotent incremental and weekly Markdown briefings and feedback-based suppression;
 - repository-scoped `$research-radar` skill;
 - a live synthetic-project run against all three metadata providers;
 - a 20-candidate synthetic golden set with an executable precision/recall and keyword-baseline evaluation;

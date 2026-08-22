@@ -4,6 +4,7 @@
 
 - Added a standard `research-radar --version` interface and regression test.
 - Corrected public beta version references in the README and completion audit.
+- Moved GitHub Actions to the Node 24-based checkout and Python setup releases.
 
 ## 0.3.0 — 2026-08-22
 

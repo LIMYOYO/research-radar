@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+import subprocess
 import sys
 import webbrowser
 from dataclasses import asdict
@@ -307,13 +308,45 @@ def _initialize_project(project: Path, force_profile: bool = False) -> dict[str,
         shutil.copyfile(template, explicit_profile)
         profile_created = True
 
+    git_exclude = _ensure_local_git_exclude(root)
+
     return {
         "project": str(root),
         "radar_root": str(radar_root),
         "config": str(config),
         "profile_created": profile_created,
+        "git_exclude": git_exclude,
         "next": f"Edit {explicit_profile if profile_created else (explicit_profile if explicit_profile.exists() else readme)}, then run research-radar profile --project {root}",
     }
+
+
+def _ensure_local_git_exclude(root: Path) -> dict[str, object]:
+    """Keep generated local state out of Git without editing tracked files."""
+    pattern = ".research-radar/"
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--git-path", "info/exclude"],
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+    except FileNotFoundError:
+        return {"status": "git-unavailable", "path": None, "pattern": pattern}
+    if result.returncode != 0 or not result.stdout.strip():
+        return {"status": "not-a-git-repository", "path": None, "pattern": pattern}
+    raw_path = Path(result.stdout.strip()).expanduser()
+    exclude = raw_path if raw_path.is_absolute() else root / raw_path
+    exclude = exclude.resolve()
+    existing = exclude.read_text(encoding="utf-8") if exclude.is_file() else ""
+    normalized = {line.strip() for line in existing.splitlines()}
+    if pattern in normalized:
+        return {"status": "already-present", "path": str(exclude), "pattern": pattern}
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    with exclude.open("a", encoding="utf-8") as stream:
+        if existing and not existing.endswith("\n"):
+            stream.write("\n")
+        stream.write(pattern + "\n")
+    return {"status": "added", "path": str(exclude), "pattern": pattern}
 
 
 def _doctor(project: Path) -> tuple[dict[str, object], int]:

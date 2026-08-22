@@ -14,6 +14,11 @@ project and are read without modification. The following artifacts stay local:
 - generated briefings and researcher feedback;
 - access provenance and policy labels.
 
+`research-radar init` also adds `.research-radar/` to the target clone's local
+`.git/info/exclude` when Git is available. This protects an existing project
+without editing its tracked `.gitignore`; the rule is local to that clone and
+is idempotent.
+
 Run `git status --ignored` before publishing a repository that has been used
 with real papers.
 

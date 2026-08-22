@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import subprocess
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -188,6 +189,34 @@ class ProjectTests(unittest.TestCase):
             diagnosis, exit_code = _doctor(root)
             self.assertEqual(exit_code, 2)
             self.assertFalse(diagnosis["ready"])
+
+    def test_init_locally_excludes_generated_state_without_editing_gitignore(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            gitignore = root / ".gitignore"
+            gitignore.write_text("*.log\n", encoding="utf-8")
+
+            first = _initialize_project(root)
+            second = _initialize_project(root)
+
+            self.assertEqual(first["git_exclude"]["status"], "added")
+            self.assertEqual(second["git_exclude"]["status"], "already-present")
+            exclude = Path(str(first["git_exclude"]["path"]))
+            self.assertEqual(
+                exclude.read_text(encoding="utf-8").splitlines().count(
+                    ".research-radar/"
+                ),
+                1,
+            )
+            self.assertEqual(gitignore.read_text(encoding="utf-8"), "*.log\n")
+            ignored = subprocess.run(
+                ["git", "-C", str(root), "check-ignore", ".research-radar/config.yaml"],
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+            self.assertEqual(ignored.returncode, 0)
 
     def test_generic_readme_cannot_masquerade_as_research_profile(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

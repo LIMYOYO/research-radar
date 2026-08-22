@@ -7,6 +7,8 @@
 - Prevented generic repository READMEs from masquerading as research profiles;
   discovery now requires a complete project distill before network work begins.
 - Added a fresh-wheel GitHub Actions smoke test and public-schema parsing.
+- Made `init` idempotently protect generated state through the target clone's
+  local Git exclude file without modifying its tracked `.gitignore`.
 - Added ranked DOI access resolution across OpenAlex, Crossref, LibKey, and the canonical publisher route.
 - Added INFORMS, INFORMS Core, and UTD24 venue presets plus explicit author and venue watch lanes.
 - Added Semantic Scholar forward-citation and reference-neighborhood discovery with optional API-key support and partial-failure isolation.

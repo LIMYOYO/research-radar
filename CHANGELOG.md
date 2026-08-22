@@ -2,6 +2,8 @@
 
 ## 0.2.0 — 2026-08-21
 
+- Switched the execution contract from background scheduling to researcher-
+  initiated `$research-radar` skill invocations and removed scheduler artifacts.
 - Added bounded single-DOI automatic PDF acquisition with signature/structure validation, automatic text export, and explicit LibKey authentication fallback.
 - Added malformed-BibTeX diagnostics plus explicit persistent/title-fallback identity status and evaluation metrics.
 - Prevented generic repository READMEs from masquerading as research profiles;

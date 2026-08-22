@@ -1,15 +1,15 @@
 # Research Radar
 
-> A project-aware, citation-aware literature radar that turns a research folder into a recurring, evidence-linked research briefing.
+> A project-aware, citation-aware literature radar that turns a research folder into an on-demand, evidence-linked research briefing.
 
-Research Radar is intended for researchers who already have a paper in progress and do not want another generic paper-search box. It reads the researcher's own project context—typically `paper.tex`, one or more `.bib` files, and a short project distillation—and continuously looks for work that could change how the project is framed, modeled, positioned, or cited.
+Research Radar is intended for researchers who already have a paper in progress and do not want another generic paper-search box. When invoked, it reads the researcher's own project context—typically `paper.tex`, one or more `.bib` files, and a short project distillation—and looks for work that could change how the project is framed, modeled, positioned, or cited.
 
 The desired experience is closer to reading a personalized research newspaper than running a literature review from scratch.
 
 **Current status:** version 0.2.0 covers the local vertical slice: U of T /
 INFORMS PDF intake, TeX and BibTeX ingestion, Crossref, OpenAlex, and Semantic
 Scholar discovery, explainable ranking, persisted deep distillation,
-incremental daily and weekly briefings, feedback, local full-text export, and a
+incremental on-demand and weekly briefings, feedback, local full-text export, and a
 repository-scoped Codex skill. Longitudinal validation with two researchers is
 still an explicit release criterion, not a completed claim. See
 [Quick start](#quick-start).
@@ -23,7 +23,7 @@ still an explicit release criterion, not a completed claim. See
 - 指定关键词、作者、工作论文系列和期刊的新文章；
 - 可能挑战、补充或抢先当前项目贡献的论文。
 
-系统获取元数据和合法可访问的全文，按照项目自己的分析框架 distill 新论文，并定期生成增量报告。它的任务不是替代研究者的 taste，而是让 taste 作用在更少、更重要的候选论文上。
+系统获取元数据和合法可访问的全文，按照项目自己的分析框架 distill 新论文，并在研究者调用 Skill 时生成增量报告。它的任务不是替代研究者的 taste，而是让 taste 作用在更少、更重要的候选论文上。
 
 access-first 链路已经通过两篇真实 INFORMS 论文验证；本地 beta 也已能读取项目、
 发现与筛选论文、生成日报、记录反馈，并把归档 PDF 导出为带页码的 Codex 阅读文本。
@@ -63,7 +63,7 @@ my-research-project/
 ├── references.bib
 ├── README.md                 # Human-written project distillation
 └── .research-radar/
-    ├── config.yaml           # Sources, cadence, venues, keywords
+    ├── config.yaml           # Sources, lookback, venues, keywords
     ├── state.sqlite          # Seen papers, identifiers, runs, feedback
     ├── profile.md            # Normalized project profile
     ├── papers/               # Local full text; never committed by default
@@ -100,7 +100,7 @@ flowchart LR
     E --> F[Access resolver]
     F --> G[Project-aware distillation]
     G --> H[Relevance and novelty ranking]
-    H --> I[Daily or weekly briefing]
+    H --> I[On-demand or weekly briefing]
     I --> J[Researcher feedback]
     J --> B
 ```
@@ -174,9 +174,9 @@ The planned system has three layers:
 
 - **Deterministic core:** a local Python CLI for parsing, identifier normalization, source adapters, deduplication, state, and report assembly.
 - **Research reasoning:** a Codex skill that defines project profiling, distillation, ranking, evidence rules, and feedback handling.
-- **Automation and access:** scheduled runs plus optional browser/library adapters that reuse user-authorized sessions.
+- **Invocation and access:** a manually invoked Codex skill plus optional browser/library adapters that reuse user-authorized sessions.
 
-This separation keeps stateful and testable operations out of prompts while leaving qualitative research judgment inspectable and editable. OpenAI's current guidance supports repository-scoped skills for reusable workflows and desktop scheduled tasks that run against local project directories.
+This separation keeps stateful and testable operations out of prompts while leaving qualitative research judgment inspectable and editable. The skill runs only when the researcher invokes it or asks for a project-conditioned literature update.
 
 ## MVP definition
 
@@ -210,7 +210,7 @@ The initial project will not:
 
 ## Quality principles
 
-- **Incremental by default:** report what is new, not the whole literature every day.
+- **Incremental by default:** report what is new, not the whole literature on every invocation.
 - **Evidence before fluency:** every substantive statement must identify its source level.
 - **Stable identity first:** DOI and other persistent identifiers drive deduplication.
 - **Taste is explicit:** positive and negative relevance criteria belong in the project profile.
@@ -242,8 +242,8 @@ signature and structure, archives it, and exports page-delimited text. If the
 provider requires browser authentication, it returns a LibKey handoff without
 writing a fake ledger record. `access resolve` is the read-only inspection
 variant. Installation and the complete browser-assisted test are documented in
-[`docs/access-first.md`](docs/access-first.md). A repository-scoped skill and
-scheduled-workflow guide are included in the repository.
+[`docs/access-first.md`](docs/access-first.md). A repository-scoped, manually
+invoked skill is included in the repository.
 
 The first real U of T/INFORMS validation is recorded in
 [`docs/access-validation-2026-08-21.md`](docs/access-validation-2026-08-21.md).
@@ -278,10 +278,17 @@ next triage learns what is already known or off topic:
   --note 'Lexically similar, but no platform decision or strategic mechanism.'
 ```
 
-For Codex, invoke `$research-radar` from the research folder. The checked-in
-skill lives at [`.agents/skills/research-radar`](.agents/skills/research-radar).
-Daily desktop setup and the tested task prompt are in
-[`docs/automation.md`](docs/automation.md).
+For Codex, install the checked-in skill once, then invoke `$research-radar`
+from any research folder:
+
+```sh
+mkdir -p ~/.codex/skills
+cp -R .agents/skills/research-radar ~/.codex/skills/
+```
+
+The skill lives at
+[`.agents/skills/research-radar`](.agents/skills/research-radar). It never
+creates a scheduled task; each run begins only after a researcher request.
 
 For a high-signal candidate, build the exact evidence packet and persist the
 deep-reading result:
@@ -347,7 +354,6 @@ The requirement-by-requirement status is recorded in
 ## References
 
 - [OpenAI: Build skills](https://learn.chatgpt.com/codex/skills)
-- [OpenAI: Scheduled tasks](https://learn.chatgpt.com/docs/automations)
 - [Semantic Scholar Academic Graph API](https://api.semanticscholar.org/api-docs/)
 - [INFORMS institutional journal access](https://www.informs.org/Publications/Journal-Subscriptions)
 - [University of Toronto electronic resource access](https://library.utoronto.ca/use/how-to/access-electronic-resources)

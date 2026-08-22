@@ -55,7 +55,7 @@ TEMPLATE_ROOT = Path(__file__).resolve().parent / "templates"
 
 
 DEFAULT_CONFIG = """schema_version: 1
-cadence: daily
+cadence: on-demand
 top_n: 5
 lookback_days: 14
 max_seed_resolution: 12

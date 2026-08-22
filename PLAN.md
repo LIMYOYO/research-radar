@@ -74,7 +74,7 @@ The working interpretation of “UTD papers” is the UTD24/top-business-journal
 | Keep `paper-access-router` as a technical spike | Browser/library authentication is one adapter, not the product boundary. |
 | Local-first MVP | Unpublished TeX, notes, feedback, and downloaded papers may be sensitive. |
 | Deterministic CLI plus Codex skill | Parsing, state, and deduplication need tests; distillation and judgment need adaptable instructions. |
-| Manual run before scheduled run | Scheduling an unreliable search creates duplicate noise and hides failures. |
+| Manual invocation through the skill | The researcher controls timing while persisted state keeps repeated searches incremental. |
 | Metadata discovery and full-text access remain separate | Relevance should not disappear merely because access failed. |
 | No credential storage or MFA bypass | Institutional authentication remains user- and library-controlled. |
 | Markdown reports plus SQLite state | Reports stay readable and reviewable; machine state stays queryable and idempotent. |
@@ -267,7 +267,7 @@ Acceptance criteria:
 - empty days produce a concise “no high-signal change” report rather than noise;
 - all filtered candidates remain auditable.
 
-### M6 — Codex skill and scheduled execution
+### M6 — Codex skill and manual execution
 
 Goal: make the validated workflow natural to run and repeat.
 
@@ -277,16 +277,16 @@ Deliverables:
 - references for profile, evidence, ranking, and report standards;
 - deterministic scripts invoked by the skill;
 - manual end-to-end skill tests;
-- scheduled-task prompt and installation guide;
+- global-skill installation and invocation guide;
 - run mode that defaults to read-only project ingestion and writes only inside `.research-radar/`;
-- notification or summary behavior for successful, empty, and failed runs.
+- concise summary behavior for successful, empty, and failed invocations.
 
 Acceptance criteria:
 
 - explicit and implicit skill invocations choose the correct workflow;
-- a scheduled run is idempotent and resumes from the last successful watermark;
-- the desktop app can run against a local Git project while preserving local privacy;
-- three consecutive scheduled runs complete without duplicate reports;
+- a repeated manual run is idempotent and resumes from the last successful watermark;
+- the skill can run against a local Git project while preserving local privacy;
+- three consecutive invocations complete without duplicate reports;
 - failures include a clear recovery action.
 
 ### M7 — Sharing, packaging, and portability
@@ -354,7 +354,7 @@ Feedback is project-specific by default; cross-project learning requires an expl
 | Citation providers disagree or lag | False confidence in completeness | Multi-source provenance and visible coverage gaps. |
 | Google Scholar automation has not been evaluated for acceptable use | Brittle or noncompliant dependency | Do not make Scholar automation an MVP dependency; evaluate terms separately. |
 | Publisher and library authentication changes | Broken full-text routes | Adapter boundary, manual fallback, and integration tests. |
-| Scheduled authentication expires | Unattended run cannot fetch full text | Complete metadata run, queue access requests, never fake success. |
+| Institutional authentication expires | A requested full text cannot be fetched | Complete the metadata run, queue the access request, never fake success. |
 | Generic LLM summaries sound convincing | Poor research decisions | Typed evidence labels, source links, and evaluation fixtures. |
 | Project profile is vague | High-noise recommendations | Require closest-literature and exclusion sections; support iterative review. |
 | New-paper novelty is confused with relevance | Trendy but useless briefing | Separate novelty, structural fit, and decision-value scores. |
@@ -379,7 +379,7 @@ The code-complete local beta now needs longitudinal evidence:
 
 1. Select the first private project and fill its explicit `RESEARCH_PROFILE.md`.
 2. Judge at least 20 candidate papers, including hard negatives and competitors.
-3. Run the daily task for one week, then tune queries, exclusions, and thresholds.
+3. Invoke the skill during normal work for one week, then tune queries, exclusions, and thresholds.
 4. Onboard a second researcher and record installation or interpretation friction.
 
 ## 10. Implementation snapshot — 2026-08-21
@@ -416,10 +416,8 @@ The planned Codex integration follows current official guidance:
 
 - skills package instructions, resources, and optional scripts for reusable workflows;
 - repository skills can live under `.agents/skills` and be checked into the project;
-- scheduled tasks in the desktop app can run against local projects while the app and machine are running;
-- scheduled workflows should be tested manually before being automated.
+- manual skill invocations keep the researcher in control of timing and interactive access.
 
 References:
 
 - [OpenAI — Build skills](https://learn.chatgpt.com/codex/skills)
-- [OpenAI — Scheduled tasks](https://learn.chatgpt.com/docs/automations)

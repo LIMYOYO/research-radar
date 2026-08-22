@@ -1,29 +1,35 @@
 ---
 name: research-radar
-description: Run a project-aware literature radar from a research folder containing TeX, BibTeX, and a research profile; use for recurring paper discovery, citation-neighborhood monitoring, evidence-aware distillation, briefings, or relevance feedback. Do not use for a generic one-off citation lookup with no project context.
+description: Run an on-demand, project-aware literature radar from a research folder containing TeX, BibTeX, and a research profile; use when the researcher asks to find new or related papers, inspect citation neighborhoods, distill candidates, obtain one selected paper, create a briefing, or record relevance feedback. Do not use for a generic one-off citation lookup with no project context.
 ---
 
 # Research Radar
 
 Turn the researcher's current project into a low-noise incremental briefing. The local CLI owns parsing, identifiers, API queries, deduplication, state, and baseline ranking. Codex supplies the qualitative comparison that cannot be reduced to keyword overlap.
 
+Run only in response to the researcher's current request. Never create or edit a
+Scheduled task, cron job, or LaunchAgent. Repeated manual invocations remain
+incremental because the CLI persists its watermark and seen-paper state.
+
 ## Establish the project
 
 Use the directory containing `RESEARCH_PROFILE.md` or `README.md`, a manuscript `.tex`, and one or more `.bib` files. Do not edit those source files unless the user separately asks.
 
-Run the repository's CLI through its virtual environment when present:
+Resolve the CLI in this order: `research-radar` on `PATH`, then the current
+repository's `.venv/bin/research-radar`. If neither exists, explain how to
+install the package and stop. Use the resolved executable consistently:
 
 ```sh
-.venv/bin/research-radar doctor --project /absolute/project/path
-.venv/bin/research-radar profile --project /absolute/project/path
+research-radar doctor --project /absolute/project/path
+research-radar profile --project /absolute/project/path
 ```
 
 If the project has not been initialized, run `research-radar init /absolute/project/path`, ask the researcher to replace the generated prompts with substantive project content, and stop before interpreting placeholder text.
 
 ## Choose the mode
 
-- For a normal update, run `research-radar run --project /absolute/project/path`. Respect a user-supplied date window; otherwise use the configured lookback.
-- For a weekly synthesis, run `research-radar weekly --project /absolute/project/path` after the daily state has accumulated.
+- For a normal manual update, run `research-radar run --project /absolute/project/path`. Respect a user-supplied date window; otherwise use the configured lookback.
+- For a synthesis across prior invocations, run `research-radar weekly --project /absolute/project/path`.
 - For offline re-triage after feedback, run `research-radar brief --project /absolute/project/path`.
 - For a high-signal DOI without local full text, first run `research-radar access acquire DOI --project /absolute/project/path`. It may automatically archive and export one verified public/OA PDF. Never loop this command over an unreviewed candidate set.
 - If `access acquire` returns `authentication-required`, follow [references/browser-access.md](references/browser-access.md) with the connected authorized browser when available.
@@ -44,8 +50,8 @@ research-radar distill context IDENTITY --project /absolute/project/path
 
 If the packet exposes an eligible local PDF but no text file, run its
 `full_text_export_command`, then read the page-delimited text. Produce one JSON
-object matching `schemas/distillation.schema.json`, save it under the private
-`.research-radar/` directory, and validate/persist it with:
+object matching the repository's `schemas/distillation.schema.json`, save it
+under the private `.research-radar/` directory, and validate/persist it with:
 
 ```sh
 research-radar distill import /absolute/project/path/.research-radar/distillation.json \

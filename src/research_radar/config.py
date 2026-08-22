@@ -13,7 +13,7 @@ from .presets import VENUE_PRESETS
 
 DEFAULTS: dict[str, Any] = {
     "schema_version": 1,
-    "cadence": "daily",
+    "cadence": "on-demand",
     "top_n": 5,
     "lookback_days": 14,
     "max_seed_resolution": 12,

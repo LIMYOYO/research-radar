@@ -54,6 +54,32 @@ def candidate(
 
 
 class RankingAndReportingTests(unittest.TestCase):
+    def test_hard_wrapped_exclusion_does_not_create_generic_mini_rules(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            copy_fixture(root)
+            profile = root / "RESEARCH_PROFILE.md"
+            profile.write_text(
+                profile.read_text(encoding="utf-8").replace(
+                    "Pure sentiment-classification papers without platform decisions; "
+                    "static review helpfulness prediction.",
+                    "Suppress generic facility-location heuristics that do not model\n"
+                    "responders or retrieval; static review helpfulness prediction.",
+                ),
+                encoding="utf-8",
+            )
+            snapshot = ingest_project(root)
+            relevant = candidate(
+                "doi:10.5555/responders",
+                "Modeling Community First Responders",
+                "We model responders and emergency availability in a spatial service system.",
+                lane="openalex:forward-citations",
+            )
+
+            ranked = rank_candidates(snapshot, [relevant])
+
+            self.assertFalse(ranked[0].suppressed)
+
     def test_structurally_relevant_candidate_ranks_above_lexical_noise(self) -> None:
         snapshot = ingest_project(FIXTURE)
         relevant = candidate(

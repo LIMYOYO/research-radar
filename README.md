@@ -255,7 +255,7 @@ status and AI-use permission must be tracked separately.
 Research Radar requires Python 3.9 or newer.
 
 ```sh
-git clone <this-repository-url> research-radar
+git clone https://github.com/LIMYOYO/research-radar.git
 cd research-radar
 python3 -m venv .venv
 .venv/bin/python -m pip install -e .

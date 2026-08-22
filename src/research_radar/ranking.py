@@ -53,6 +53,38 @@ def tokens(text: str) -> set[str]:
     }
 
 
+def _profile_exclusion_phrases(text: str) -> list[set[str]]:
+    """Parse semantic exclusion clauses without treating Markdown wraps as clauses."""
+    blocks: list[str] = []
+    current: list[str] = []
+
+    def flush() -> None:
+        if current:
+            blocks.append(" ".join(current))
+            current.clear()
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            flush()
+            continue
+        bullet = re.match(r"^[-*+]\s+(.*)$", line)
+        if bullet:
+            flush()
+            current.append(bullet.group(1))
+            continue
+        current.append(line)
+    flush()
+
+    phrases: list[set[str]] = []
+    for block in blocks:
+        for clause in re.split(r"[;.!?]+", block):
+            phrase = tokens(clause)
+            if phrase:
+                phrases.append(phrase)
+    return phrases
+
+
 def _overlap(left: set[str], right: set[str]) -> float:
     if not left or not right:
         return 0.0
@@ -162,10 +194,9 @@ def rank_candidates(
         phrase = tokens(str(item))
         if phrase:
             exclusion_phrases.append(phrase)
-    for item in re.split(r"[;\n]+", snapshot.profile.sections.get("exclude", "")):
-        phrase = tokens(item)
-        if phrase:
-            exclusion_phrases.append(phrase)
+    exclusion_phrases.extend(
+        _profile_exclusion_phrases(snapshot.profile.sections.get("exclude", ""))
+    )
 
     ranked: list[RankedCandidate] = []
     for original in candidates:

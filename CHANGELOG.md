@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-08-22
 
 - Separated provider-reported availability from verified local PDF/text state
   so reports cannot claim that a provider link is a local full-text file.
@@ -24,6 +24,8 @@
   and explicit all-page visual confirmation for image-only papers.
 - Fixed the CLI distillation-import path and completed a live U of T/LibKey/
   EBSCO acquisition plus full-text distillation for an INFORMS article.
+- Added a repeatable installer/upgrader for an isolated CLI environment and
+  Codex skill, with recoverable skill backups and fresh-install smoke coverage.
 
 ## 0.2.0 — 2026-08-21
 

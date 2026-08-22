@@ -7,7 +7,9 @@ identity resolution, ranking evaluation, access routing, and report usability.
 2. Add or update a synthetic fixture; never commit private manuscripts, cookies,
    downloaded papers, or institutional credentials.
 3. Run `python -m unittest discover -s tests -v` and `python -m compileall -q src tests`.
-4. Explain observable behavior and evidence in the pull request.
+4. When changing packaging or the skill, smoke-test `scripts/install.sh` with
+   temporary `--data-dir`, `--bin-dir`, and `--codex-home` paths.
+5. Explain observable behavior and evidence in the pull request.
 
 New discovery adapters must retain provenance, tolerate partial failure, and use
 mocked unit tests rather than depending only on live network results. New

@@ -4,6 +4,8 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+build/
+dist/
 
 # Local research material and generated state should not be published by default.
 .research-radar/

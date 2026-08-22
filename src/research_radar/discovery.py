@@ -17,6 +17,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
+from . import __version__
 from .access import AccessError, normalize_doi
 from .config import configured_watch, load_config
 from .project import ProjectSnapshot, SeedPaper, normalize_title, require_profile_ready
@@ -25,7 +26,9 @@ from .project import ProjectSnapshot, SeedPaper, normalize_title, require_profil
 CROSSREF_API = "https://api.crossref.org"
 OPENALEX_API = "https://api.openalex.org"
 SEMANTIC_SCHOLAR_API = "https://api.semanticscholar.org/graph/v1"
-USER_AGENT = "research-radar/0.2 (https://github.com/research-radar/research-radar)"
+USER_AGENT = (
+    f"research-radar/{__version__} (https://github.com/LIMYOYO/research-radar)"
+)
 
 
 class DiscoveryError(RuntimeError):

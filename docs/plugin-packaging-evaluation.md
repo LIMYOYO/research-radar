@@ -2,7 +2,7 @@
 
 ## Decision
 
-Version 0.2 ships as a normal Python package plus a repository-scoped Codex
+Version 0.3 ships as a normal Python package plus a repository-scoped Codex
 skill. A Codex plugin is not required for the first public release.
 
 The deterministic CLI already owns parsing, provider requests, state,

@@ -9,6 +9,7 @@ from typing import Callable
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
+from . import __version__
 from .access import (
     AccessError,
     export_pdf_text,
@@ -20,7 +21,7 @@ from .access import (
 from .resolution import AccessOption, AccessResolution, resolve_access
 
 
-USER_AGENT = "research-radar/0.2 (single-paper acquisition)"
+USER_AGENT = f"research-radar/{__version__} (single-paper acquisition)"
 DEFAULT_MAX_BYTES = 100 * 1024 * 1024
 
 

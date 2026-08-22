@@ -23,8 +23,10 @@ Observed on 2026-08-21:
 - 67 tests passed;
 - all source and test modules compiled;
 - the repository skill validated;
-- a version 0.2.0 wheel installed and initialized a project in a fresh Python
+- a version 0.3.0 wheel installed and initialized a project in a fresh Python
   3.9 virtual environment;
+- the portable installer created an isolated CLI and Codex skill in fresh
+  custom paths, then upgraded them in place while preserving the prior skill;
 - Research Radar precision@5/10 was 1.00/0.80 on the 20-paper synthetic fixture,
   versus 0.60/0.70 for the title-and-abstract keyword baseline;
 - the same fixture had 100% persistent identifiers, 100% explicit identity

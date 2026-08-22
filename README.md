@@ -267,18 +267,27 @@ Research Radar requires Python 3.9 or newer.
 ```sh
 git clone https://github.com/LIMYOYO/research-radar.git
 cd research-radar
-python3 -m venv .venv
-.venv/bin/python -m pip install -e .
+./scripts/install.sh
 
-.venv/bin/research-radar init /path/to/my-research-project
+research-radar init /path/to/my-research-project
 # Fill in RESEARCH_PROFILE.md and add/keep paper.tex plus references.bib.
 # A normal software README is not treated as a completed research profile.
-.venv/bin/research-radar doctor --project /path/to/my-research-project
-.venv/bin/research-radar run --project /path/to/my-research-project
-.venv/bin/research-radar queue --scope latest --limit 3 \
+research-radar doctor --project /path/to/my-research-project
+research-radar run --project /path/to/my-research-project
+research-radar queue --scope latest --limit 3 \
   --project /path/to/my-research-project
-.venv/bin/research-radar weekly --project /path/to/my-research-project
+research-radar weekly --project /path/to/my-research-project
 ```
+
+The installer creates an isolated environment under
+`~/.local/share/research-radar`, writes the command to `~/.local/bin`, and
+installs the checked-in skill under `~/.codex/skills`. Re-run it after pulling
+an update; the prior skill is retained as a timestamped backup. Use
+`./scripts/install.sh --help` for custom paths. If `~/.local/bin` is not on
+`PATH`, add it to the shell configuration or invoke that absolute command.
+
+For editable development instead, create `.venv` and run
+`.venv/bin/python -m pip install -e .`.
 
 `run` persists exactly which candidates were new or materially updated;
 `queue --scope latest` ranks only that delta and emits argv-style next commands
@@ -295,8 +304,9 @@ next triage learns what is already known or off topic:
   --note 'Lexically similar, but no platform decision or strategic mechanism.'
 ```
 
-For Codex, install the checked-in skill once, then invoke `$research-radar`
-from any research folder:
+The installer also makes the checked-in skill available to Codex. You can then
+invoke `$research-radar` from any research folder. For a CLI-only editable
+development setup, install the skill manually with:
 
 ```sh
 mkdir -p ~/.codex/skills

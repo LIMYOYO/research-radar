@@ -25,7 +25,7 @@ still an explicit release criterion, not a completed claim. See
 
 系统获取元数据和合法可访问的全文，按照项目自己的分析框架 distill 新论文，并在研究者调用 Skill 时生成增量报告。它的任务不是替代研究者的 taste，而是让 taste 作用在更少、更重要的候选论文上。
 
-access-first 链路已经通过两篇真实 INFORMS 论文验证；本地 beta 也已能读取项目、
+access-first 链路已经通过三篇真实 INFORMS 论文验证；本地 beta 也已能读取项目、
 发现与筛选论文、生成日报、记录反馈，并把归档 PDF 导出为带页码的 Codex 阅读文本。
 
 ## The problem

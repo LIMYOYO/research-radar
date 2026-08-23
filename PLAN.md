@@ -1,8 +1,8 @@
 # Research Radar — Access-first Project Plan
 
-- Status: v0.2 local vertical slice implemented; longitudinal validation remains
-- Last updated: 2026-08-21
-- Current priority: calibrate the complete local workflow on real research projects after passing the access gate and synthetic end-to-end test.
+- Status: v0.3.2 local beta released and CI-verified; longitudinal validation remains
+- Last updated: 2026-08-23
+- Current priority: collect two-project, four-week researcher validation evidence.
 
 ## 0. Access-first sequencing decision
 

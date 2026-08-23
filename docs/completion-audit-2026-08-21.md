@@ -1,4 +1,4 @@
-# Completion audit — 2026-08-21
+# Completion audit — refreshed 2026-08-23
 
 This audit separates locally reproducible engineering completion from the
 longitudinal product definition of done in `PLAN.md`. A synthetic fixture cannot
@@ -18,13 +18,15 @@ Run from the repository root:
   .agents/skills/research-radar
 ```
 
-Observed through 2026-08-22:
+Observed through 2026-08-23:
 
-- 68 tests passed;
+- 74 tests passed locally on Python 3.9, and GitHub Actions passed on Python
+  3.9, Python 3.12, and the fresh-wheel package smoke job at commit `2dfd5e1`;
 - all source and test modules compiled;
 - the repository skill validated;
-- a version 0.3.1 wheel installed and initialized a project in a fresh Python
-  3.9 virtual environment;
+- version 0.3.2 installed through `scripts/install.sh` in a fresh Python 3.9
+  environment; `--version`, synthetic-project initialization, and the complete
+  `doctor` readiness check passed;
 - the portable installer created an isolated CLI and Codex skill in fresh
   custom paths, then upgraded them in place while preserving the prior skill;
 - Research Radar precision@5/10 was 1.00/0.80 on the 20-paper synthetic fixture,
@@ -33,8 +35,23 @@ Observed through 2026-08-22:
   contract coverage, and a 0% duplicate-identity rate;
 - a live Semantic Scholar probe accepted the actual API response shape and
   exposed publisher-elided references as an adapter coverage gap;
+- the final no-cache MobileAED probe preserved nine candidates while Crossref
+  completed, Semantic Scholar exposed two index coverage gaps, and the exhausted
+  anonymous OpenAlex daily quota degraded without blocking the overall run;
 - the three-paper U of T/INFORMS access result remains documented in
   `docs/access-validation-2026-08-21.md`.
+
+## Version 0.3.2 release record
+
+- `pyproject.toml`, `research_radar.__version__`, README, and changelog all
+  identify the current package as 0.3.2.
+- The 0.3.2 changes add provider-aware pacing and credentials, bounded recovery
+  for long `Retry-After` responses, batched OpenAlex related-work retrieval, and
+  explicit Semantic Scholar index-coverage gaps.
+- The provider-resilience implementation was CI-verified at commit `2dfd5e1`;
+  the `v0.3.2` release commit adds only the audited status-document updates.
+- The annotated `v0.3.2` tag and GitHub Release publish the same release commit
+  containing this audit.
 
 ## Read-only real-project preflight
 
@@ -57,7 +74,7 @@ invocation from silently searching on a generic repository description.
 | M4 distillation/ranking | First real-project calibration implemented; researcher confirmation pending | Typed JSON validation, evidence gating, append-only storage, report hydration, paper-type guidance, explainable feature traces, and honest keyword-baseline comparison are implemented. A private 41-paper provisional MobileAED judgment set now measures precision@5/10 at 1.00/1.00; its labels still require researcher confirmation, and a second real-project set remains external. |
 | M5 reports/feedback | Complete for deterministic local use | Incremental delta, no-change behavior, feedback suppression, audit manifests, weekly synthesis, and full-text queue are tested. Repeated same-window runs are idempotent. |
 | M6 skill/manual invocation | Complete for the local beta | The skill validates, MobileAED passes project checks and has completed a live run, and incomplete profiles stop before network work or state persistence. The workflow deliberately creates no background schedule. |
-| M7 sharing | Public beta published; external validation pending | The public repository is available at `https://github.com/LIMYOYO/research-radar`; its first GitHub Actions test run passed. Wheel installation, docs, schemas, three profile examples, privacy guidance, issue template, contribution guide, changelog, and plugin evaluation exist. Two external onboarding reports do not yet exist. |
+| M7 sharing | Version 0.3.2 published; external validation pending | The public repository is available at `https://github.com/LIMYOYO/research-radar`; GitHub Actions passes for the provider-resilience implementation, and the release commit changes only audited status documentation. Fresh wheel/installer checks, docs, schemas, three profile examples, privacy guidance, issue template, contribution guide, changelog, and plugin evaluation exist. Two external onboarding reports do not yet exist. |
 
 ## Remaining external gates
 
@@ -67,5 +84,5 @@ Only the following items cannot be honestly completed from the repository alone:
 2. observe four consecutive weeks of useful incremental briefings and record
    onboarding friction from the second researcher.
 
-Until those gates are met, version 0.3.1 is a published public beta, not a
+Until those gates are met, version 0.3.2 remains a public beta rather than a
 validated version 1 product.
